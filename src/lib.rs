@@ -27,6 +27,7 @@ pub enum RuleType {
     AttributePresence, // Check if attributes exist/don't exist
     AttributeValue,    // Validate attribute values
     ElementOrder,      // Check element ordering
+    TextContent,       // Add this new variant
     ElementContent,    // Check element content
     WhiteSpace,        // Check whitespace/formatting
     Nesting,           // Check element nesting
@@ -130,6 +131,9 @@ impl HtmlLinter {
                 }
                 RuleType::ElementOrder => {
                     self.check_element_order(&dom, rule, &mut results, &source_lines)?
+                }
+                RuleType::TextContent => {
+                    self.check_text_content(&dom, rule, &mut results, &source_lines)?
                 }
                 RuleType::ElementContent => {
                     self.check_element_content(&dom, rule, &mut results, &source_lines)?
@@ -240,24 +244,128 @@ impl HtmlLinter {
     ) -> Result<(), LinterError> {
         let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
 
+        let target_attributes = rule
+            .options
+            .get("attributes")
+            .map(|attrs| {
+                attrs
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec!["*".to_string()]);
+
         for element in elements {
             if let NodeData::Element { ref attrs, .. } = element.data {
                 let attrs = attrs.borrow();
-                for attr in attrs.iter() {
-                    if let Some(pattern) = rule.options.get("pattern") {
-                        let regex = Regex::new(pattern)
-                            .map_err(|e| LinterError::RuleError(e.to_string()))?;
+                let mut problematic_attrs = Vec::new();
 
-                        if !regex.is_match(&attr.value) {
-                            if let Some(location) = self.get_node_location(&element, source_lines) {
-                                results.push(LintResult {
-                                    rule: rule.name.clone(),
-                                    severity: rule.severity.clone(),
-                                    message: format!("{} (value: {})", rule.message, attr.value),
-                                    location,
-                                    source: self.get_element_source(&element),
-                                });
+                let check_mode = rule
+                    .options
+                    .get("check_mode")
+                    .map(|s| s.as_str())
+                    .unwrap_or("normal");
+
+                if let Some(pattern) = rule.options.get("pattern") {
+                    let regex =
+                        Regex::new(pattern).map_err(|e| LinterError::RuleError(e.to_string()))?;
+
+                    let mut all_attributes_match = true;
+                    let mut found_any_target = false;
+
+                    // First, check if any of the target attributes exist
+                    for attr in attrs.iter() {
+                        if target_attributes.contains(&"*".to_string())
+                            || target_attributes.contains(&attr.name.local.to_string())
+                        {
+                            found_any_target = true;
+                            break;
+                        }
+                    }
+
+                    // If we're in ensure_existence mode and no target attributes were found, report it
+                    if check_mode == "ensure_existence" && !found_any_target {
+                        if let Some(location) = self.get_node_location(&element, source_lines) {
+                            results.push(LintResult {
+                                rule: rule.name.clone(),
+                                severity: rule.severity.clone(),
+                                message: format!(
+                                    "{} (missing required attributes: {})",
+                                    rule.message,
+                                    target_attributes.join(", ")
+                                ),
+                                location,
+                                source: self.get_element_source(&element),
+                            });
+                        }
+                        continue;
+                    }
+
+                    // Rest of the existing attribute checking logic
+                    for attr in attrs.iter() {
+                        if !target_attributes.contains(&"*".to_string())
+                            && !target_attributes.contains(&attr.name.local.to_string())
+                        {
+                            continue;
+                        }
+
+                        found_any_target = true;
+                        let matches = regex.is_match(&attr.value);
+
+                        match check_mode {
+                            "ensure_existence" => {
+                                if !matches
+                                    && (target_attributes.contains(&"*".to_string())
+                                        || target_attributes.contains(&attr.name.local.to_string()))
+                                {
+                                    all_attributes_match = false;
+                                    problematic_attrs.push((
+                                        attr.name.local.to_string(),
+                                        attr.value.to_string(),
+                                    ));
+                                }
                             }
+                            "ensure_nonexistence" => {
+                                if matches {
+                                    problematic_attrs.push((
+                                        attr.name.local.to_string(),
+                                        attr.value.to_string(),
+                                    ));
+                                }
+                            }
+                            _ => {
+                                // Normal mode - report matching attributes
+                                if matches {
+                                    problematic_attrs.push((
+                                        attr.name.local.to_string(),
+                                        attr.value.to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    let should_report = match check_mode {
+                        "check_existence" => found_any_target && !all_attributes_match,
+                        "ensure_nonexistence" => !problematic_attrs.is_empty(),
+                        _ => !problematic_attrs.is_empty(),
+                    };
+
+                    if should_report {
+                        if let Some(location) = self.get_node_location(&element, source_lines) {
+                            let attr_list = problematic_attrs
+                                .iter()
+                                .map(|(name, value)| format!("{}=\"{}\"", name, value))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+
+                            results.push(LintResult {
+                                rule: rule.name.clone(),
+                                severity: rule.severity.clone(),
+                                message: format!("{} (attributes: {})", rule.message, attr_list),
+                                location,
+                                source: self.get_element_source(&element),
+                            });
                         }
                     }
                 }
@@ -613,24 +721,50 @@ impl HtmlLinter {
     }
 
     fn matches_single_selector(&self, element_name: &str, selector: &str) -> bool {
-        // Handle custom selectors first
-        if let Some(custom_selector) = self.options.custom_selectors.get(selector) {
-            return element_name == custom_selector;
+        // Handle empty selector
+        if selector.is_empty() {
+            return false;
         }
 
-        // Basic element name matching
-        if selector.starts_with('.') {
-            // Class selector (simplified)
-            false // TODO: Implement class matching
-        } else if selector.starts_with('#') {
-            // ID selector (simplified)
-            false // TODO: Implement ID matching
+        // Handle group selectors (comma-separated)
+        if selector.contains(',') {
+            return selector
+                .split(',')
+                .map(str::trim)
+                .any(|s| self.matches_single_selector(element_name, s));
+        }
+
+        // Since we only have element_name, we can only match:
+        // 1. Type selectors (div, span, etc.)
+        // 2. Universal selector (*)
+        // 3. The element part of complex selectors
+
+        // Extract the element/type part of the selector
+        let element_part = if selector.contains(|c| c == '.' || c == '#' || c == '[' || c == ':') {
+            // For complex selectors, get the element part before any modifier
+            selector
+                .chars()
+                .take_while(|&c| c.is_ascii_alphabetic() || c == '-' || c == '_' || c == '*')
+                .collect::<String>()
         } else {
-            // Element name selector
-            element_name == selector
-        }
-    }
+            // Simple element selector
+            selector.to_string()
+        };
 
+        // Handle universal selector
+        if element_part == "*" {
+            return true;
+        }
+
+        // If element part is empty (selector starts with ., #, [, or :)
+        // then any element name is valid
+        if element_part.is_empty() {
+            return true;
+        }
+
+        // Match element name exactly
+        element_name == element_part
+    }
     fn walk_dom<F>(&self, handle: &Handle, mut callback: F)
     where
         F: FnMut(&Handle),
@@ -955,6 +1089,56 @@ impl HtmlLinter {
             MetaTagPattern::StartsWith(prefix) => format!("starts with '{}'", prefix),
             MetaTagPattern::EndsWith(suffix) => format!("ends with '{}'", suffix),
         }
+    }
+
+    fn check_text_content(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
+
+        for element in elements {
+            let text_content = self.get_element_content(&element);
+
+            if let Some(pattern) = rule.options.get("pattern") {
+                let regex =
+                    Regex::new(pattern).map_err(|e| LinterError::RuleError(e.to_string()))?;
+
+                let check_mode = rule
+                    .options
+                    .get("check_mode")
+                    .map(|s| s.as_str())
+                    .unwrap_or("normal");
+
+                let matches = regex.is_match(&text_content);
+                let should_report = match check_mode {
+                    "ensure_existence" => !matches,
+                    "ensure_nonexistence" => matches,
+                    _ => matches,
+                };
+
+                if should_report {
+                    if let Some(location) = self.get_node_location(&element, source_lines) {
+                        results.push(LintResult {
+                            rule: rule.name.clone(),
+                            severity: rule.severity.clone(),
+                            message: format!(
+                                "{} (text content: \"{}\")",
+                                rule.message,
+                                text_content.trim()
+                            ),
+                            location,
+                            source: self.get_element_source(&element),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn from_json(json: &str, options: Option<LinterOptions>) -> Result<Self, LinterError> {
