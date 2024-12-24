@@ -1,0 +1,22 @@
+[package]
+name = "html-linter"
+version = "0.1.0"
+edition = "2021"
+description = "An HTML linting library for checking HTML structure and semantics"
+license = "MIT"
+
+[dependencies]
+html5ever = "0.26"
+markup5ever_rcdom = "0.2"
+regex = "1.9"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+serde_json = "1.0"
+
+
+[lib]
+name = "html_linter"
+path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = "3.2"

@@ -1,0 +1,42 @@
+# Rust specific ignores
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IDE - IntelliJ IDEA / CLion
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux specific
+*~
+.directory
+
+# Debug files
+*.pdb
+
+# Environment files
+.env
+.env.local
+
+# Build output
+/debug/
+/release/
