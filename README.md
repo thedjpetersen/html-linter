@@ -96,6 +96,186 @@ let linter = HtmlLinter::from_json(json_str, None)?;
 let linter = HtmlLinter::from_json_file("path/to/rules.json", None)?;
 ```
 
+### JSON Rule Configuration Reference
+
+Each rule in the JSON configuration must follow this structure:
+
+```json
+{
+  "name": "string", // Unique identifier for the rule
+  "rule_type": "string", // One of the supported rule types
+  "severity": "string", // "Error", "Warning", or "Info"
+  "selector": "string", // CSS-like selector
+  "condition": "string", // Rule-specific condition
+  "message": "string", // Error message to display
+  "options": {
+    // Optional additional configuration
+    "key": "value"
+  }
+}
+```
+
+#### Supported Rule Types
+
+1. **ElementPresence**
+
+   ```json
+   {
+     "name": "require-main",
+     "rule_type": "ElementPresence",
+     "severity": "Error",
+     "selector": "main",
+     "condition": "required",
+     "message": "Page must have a main content area"
+   }
+   ```
+
+2. **AttributePresence**
+
+   ```json
+   {
+     "name": "img-alt",
+     "rule_type": "AttributePresence",
+     "severity": "Error",
+     "selector": "img",
+     "condition": "alt-missing",
+     "message": "Images must have alt attributes"
+   }
+   ```
+
+3. **AttributeValue**
+
+   ```json
+   {
+     "name": "valid-email",
+     "rule_type": "AttributeValue",
+     "selector": "input[type='email']",
+     "severity": "Error",
+     "condition": "pattern-match",
+     "message": "Invalid email pattern",
+     "options": {
+       "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+     }
+   }
+   ```
+
+4. **ElementOrder**
+
+   ```json
+   {
+     "name": "heading-order",
+     "rule_type": "ElementOrder",
+     "severity": "Warning",
+     "selector": "h1, h2, h3, h4, h5, h6",
+     "condition": "sequential-order",
+     "message": "Heading levels should not skip levels"
+   }
+   ```
+
+5. **ElementContent**
+
+   ```json
+   {
+     "name": "meta-description",
+     "rule_type": "ElementContent",
+     "severity": "Error",
+     "selector": "head",
+     "condition": "meta-tags",
+     "message": "Required meta tags are missing",
+     "options": {
+       "required_meta_tags": [
+         {
+           "name": "description",
+           "pattern": {
+             "type": "MinLength",
+             "value": 50
+           },
+           "required": true
+         }
+       ]
+     }
+   }
+   ```
+
+6. **WhiteSpace**
+
+   ```json
+   {
+     "name": "line-length",
+     "rule_type": "WhiteSpace",
+     "severity": "Warning",
+     "selector": "*",
+     "condition": "line-length",
+     "message": "Line exceeds maximum length",
+     "options": {
+       "max_line_length": "80"
+     }
+   }
+   ```
+
+7. **Nesting**
+
+   ```json
+   {
+     "name": "input-label",
+     "rule_type": "Nesting",
+     "severity": "Error",
+     "selector": "input",
+     "condition": "parent-label-or-for",
+     "message": "Input elements must be associated with a label"
+   }
+   ```
+
+8. **Semantics**
+
+   ```json
+   {
+     "name": "semantic-html",
+     "rule_type": "Semantics",
+     "severity": "Warning",
+     "selector": "div",
+     "condition": "semantic-structure",
+     "message": "Use semantic HTML elements instead of divs where appropriate"
+   }
+   ```
+
+9. **Custom**
+   ```json
+   {
+     "name": "no-empty-links",
+     "rule_type": "Custom",
+     "severity": "Error",
+     "selector": "a",
+     "condition": "no-empty-links",
+     "message": "Links must have content"
+   }
+   ```
+
+#### Meta Tag Patterns
+
+When using `ElementContent` with `meta-tags`, the following pattern types are supported:
+
+- `Regex`: Match content against a regular expression
+- `MinLength`: Require minimum character length
+- `MaxLength`: Limit maximum character length
+- `NonEmpty`: Ensure content is not empty
+- `Exact`: Match exact text
+- `OneOf`: Match one of several options
+- `Contains`: Check if content contains substring
+- `StartsWith`: Check if content starts with string
+- `EndsWith`: Check if content ends with string
+
+Example meta tag pattern:
+
+```json
+{
+  "pattern": {
+    "type": "MinLength",
+    "value": 50
+  }
+}
+```
+
 ### 2. Create an `HtmlLinter`
 
 ```rust
