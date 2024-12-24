@@ -38,17 +38,9 @@ use html_linter::{HtmlLinter, LinterOptions, Rule, RuleType, Severity, LintResul
 
 ### 1. Define your linting rules
 
-You can define a set of `Rule` structs, each of which includes:
+You can define rules either programmatically or using JSON configuration:
 
-- A human-readable name
-- A `RuleType` (e.g., `RuleType::ElementPresence`, `RuleType::AttributePresence`, etc.)
-- A severity (`Severity::Error`, `Severity::Warning`, or `Severity::Info`)
-- A CSS-like selector (e.g., `"img"`, `"h1,h2,h3,h4,h5,h6"`, `"*"` for any element, etc.)
-- A condition string (the meaning depends on `RuleType`—for example, `"alt-missing"` if you want to enforce an `alt` attribute)
-- A message describing the rule violation
-- Additional options in a `HashMap` if needed for things like regex patterns or meta-tag rules
-
-Example:
+#### Option A: Programmatic Rule Definition
 
 ```rust
 use std::collections::HashMap;
@@ -64,16 +56,44 @@ let rules = vec![
         message: "Images must have alt attributes".to_string(),
         options: HashMap::new(),
     },
-    Rule {
-        name: "no-inline-styles".to_string(),
-        rule_type: RuleType::AttributePresence,
-        severity: Severity::Warning,
-        selector: "*".to_string(),
-        condition: "style-attribute".to_string(),
-        message: "Inline styles should be avoided".to_string(),
-        options: HashMap::new(),
-    },
 ];
+```
+
+#### Option B: JSON Configuration
+
+```json
+[
+  {
+    "name": "img-alt",
+    "rule_type": "AttributePresence",
+    "severity": "Error",
+    "selector": "img",
+    "condition": "alt-missing",
+    "message": "Images must have alt attributes",
+    "options": {}
+  },
+  {
+    "name": "meta-tags",
+    "rule_type": "ElementContent",
+    "severity": "Error",
+    "selector": "head",
+    "condition": "meta-tags",
+    "message": "Meta tags validation failed",
+    "options": {
+      "required_meta_tags": "[{\"name\":\"description\",\"pattern\":{\"type\":\"MinLength\",\"value\":50},\"required\":true}]"
+    }
+  }
+]
+```
+
+You can load JSON rules either from a string or from a file:
+
+```rust
+// Load from JSON string
+let linter = HtmlLinter::from_json(json_str, None)?;
+
+// Load from JSON file
+let linter = HtmlLinter::from_json_file("path/to/rules.json", None)?;
 ```
 
 ### 2. Create an `HtmlLinter`
