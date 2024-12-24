@@ -363,15 +363,289 @@ cargo test
 
 The library supports several `RuleType`s, each controlling how the rule is evaluated:
 
-- **`ElementPresence`**: Checks if certain elements exist (or do not exist).
-- **`AttributePresence`**: Checks if specific attributes are present (or missing).
-- **`AttributeValue`**: Validates attribute values against a regex or other criteria.
-- **`ElementOrder`**: Ensures elements follow a certain order (e.g., heading levels).
-- **`ElementContent`**: Validates text content or checks for empty content.
-- **`WhiteSpace`**: Checks whitespace and line length constraints.
-- **`Nesting`**: Ensures certain elements are nested within parent elements or properly associated.
-- **`Semantics`**: Encourages semantic HTML usage (e.g., `<header>` instead of `<div class="header">`).
-- **`Custom(String)`**: Custom rule logic with a built-in function key (e.g., `"no-empty-links"`).
+### ElementPresence
+
+Checks if certain elements exist (or do not exist).
+
+```json
+{
+  "name": "require-main",
+  "rule_type": "ElementPresence",
+  "severity": "Error",
+  "selector": "main",
+  "condition": "required",
+  "message": "Page must have a main content area"
+}
+```
+
+### AttributePresence
+
+Checks if specific attributes are present (or missing).
+
+```json
+{
+  "name": "img-alt",
+  "rule_type": "AttributePresence",
+  "severity": "Error",
+  "selector": "img",
+  "condition": "alt-missing",
+  "message": "Images must have alt attributes"
+}
+```
+
+### AttributeValue
+
+Validates attribute values against a regex or other criteria.
+
+```json
+{
+  "name": "valid-email",
+  "rule_type": "AttributeValue",
+  "selector": "input[type='email']",
+  "severity": "Error",
+  "condition": "pattern-match",
+  "message": "Invalid email pattern",
+  "options": {
+    "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+  }
+}
+```
+
+### ElementOrder
+
+Ensures elements follow a certain order (e.g., heading levels).
+
+```json
+{
+  "name": "heading-order",
+  "rule_type": "ElementOrder",
+  "severity": "Warning",
+  "selector": "h1, h2, h3, h4, h5, h6",
+  "condition": "sequential-order",
+  "message": "Heading levels should not skip levels"
+}
+```
+
+### ElementContent
+
+Validates text content or checks for empty content.
+
+```json
+{
+  "name": "meta-description",
+  "rule_type": "ElementContent",
+  "severity": "Error",
+  "selector": "head",
+  "condition": "meta-tags",
+  "message": "Required meta tags are missing",
+  "options": {
+    "required_meta_tags": [
+      {
+        "name": "description",
+        "pattern": {
+          "type": "MinLength",
+          "value": 50
+        },
+        "required": true
+      }
+    ]
+  }
+}
+```
+
+### WhiteSpace
+
+Checks whitespace and line length constraints.
+
+```json
+{
+  "name": "line-length",
+  "rule_type": "WhiteSpace",
+  "severity": "Warning",
+  "selector": "*",
+  "condition": "line-length",
+  "message": "Line exceeds maximum length",
+  "options": {
+    "max_line_length": "80"
+  }
+}
+```
+
+### Nesting
+
+Ensures certain elements are nested within parent elements or properly associated.
+
+```json
+{
+  "name": "input-label",
+  "rule_type": "Nesting",
+  "severity": "Error",
+  "selector": "input",
+  "condition": "parent-label-or-for",
+  "message": "Input elements must be associated with a label"
+}
+```
+
+### Semantics
+
+Encourages semantic HTML usage (e.g., `<header>` instead of `<div class="header">`).
+
+```json
+{
+  "name": "semantic-html",
+  "rule_type": "Semantics",
+  "severity": "Warning",
+  "selector": "div",
+  "condition": "semantic-structure",
+  "message": "Use semantic HTML elements instead of divs where appropriate"
+}
+```
+
+### Custom
+
+Custom rule logic with a built-in function key (e.g., `"no-empty-links"`).
+
+```json
+{
+  "name": "no-empty-links",
+  "rule_type": "Custom",
+  "severity": "Error",
+  "selector": "a",
+  "condition": "no-empty-links",
+  "message": "Links must have content"
+}
+```
+
+### Compound
+
+Allows combining multiple conditions that must all be satisfied (or any of them, depending on configuration).
+
+```json
+{
+  "name": "accessible-button",
+  "rule_type": "Compound",
+  "severity": "Error",
+  "selector": "button",
+  "condition": "compound",
+  "message": "Button must have both aria-label and role",
+  "options": {
+    "check_mode": "all",
+    "conditions": [
+      {
+        "type": "AttributeValue",
+        "attribute": "aria-label",
+        "pattern": ".+"
+      },
+      {
+        "type": "AttributeValue",
+        "attribute": "role",
+        "pattern": "button"
+      }
+    ]
+  }
+}
+```
+
+### TextContent
+
+Validates the text content of elements against patterns.
+
+```json
+{
+  "name": "min-heading-length",
+  "rule_type": "TextContent",
+  "severity": "Warning",
+  "selector": "h1, h2, h3",
+  "condition": "text-content",
+  "message": "Heading text should be descriptive",
+  "options": {
+    "pattern": ".{10,}",
+    "check_mode": "ensure_existence"
+  }
+}
+```
+
+### Pattern Types for Content Validation
+
+When validating content (especially with `TextContent` or `ElementContent`), the following pattern types are supported:
+
+- `Regex`: Match content against a regular expression
+- `MinLength`: Require minimum character length
+- `MaxLength`: Limit maximum character length
+- `NonEmpty`: Ensure content is not empty
+- `Exact`: Match exact text
+- `OneOf`: Match one of several options
+- `Contains`: Check if content contains substring
+- `StartsWith`: Check if content starts with string
+- `EndsWith`: Check if content ends with string
+
+Example using different pattern types:
+
+```json
+{
+  "name": "meta-tags",
+  "rule_type": "ElementContent",
+  "severity": "Error",
+  "selector": "head",
+  "condition": "meta-tags",
+  "message": "Meta tags validation failed",
+  "options": {
+    "required_meta_tags": [
+      {
+        "name": "description",
+        "pattern": {
+          "type": "MinLength",
+          "value": 50
+        },
+        "required": true
+      },
+      {
+        "name": "keywords",
+        "pattern": {
+          "type": "Contains",
+          "value": "important-keyword"
+        },
+        "required": true
+      },
+      {
+        "property": "og:type",
+        "pattern": {
+          "type": "OneOf",
+          "value": ["website", "article", "product"]
+        },
+        "required": true
+      }
+    ]
+  }
+}
+```
+
+### Check Modes
+
+Many rule types support different check modes that modify how the rule is evaluated:
+
+- `normal`: Default behavior - report when pattern matches
+- `ensure_existence`: Report when pattern doesn't match (inverse)
+- `ensure_nonexistence`: Report when pattern matches (same as normal)
+- `any`: For compound rules - any condition must match
+- `all`: For compound rules - all conditions must match
+
+Example using check modes:
+
+```json
+{
+  "name": "no-placeholder-images",
+  "rule_type": "AttributeValue",
+  "severity": "Warning",
+  "selector": "img",
+  "condition": "src-check",
+  "message": "Avoid using placeholder image services",
+  "options": {
+    "check_mode": "ensure_nonexistence",
+    "pattern": "placeholder\\.com|placekitten\\.com"
+  }
+}
+```
 
 ## Contributing
 
