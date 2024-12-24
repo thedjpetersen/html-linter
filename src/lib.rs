@@ -1,4 +1,5 @@
 use html5ever::driver::ParseOpts;
+use html5ever::interface::QuirksMode;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -23,16 +24,17 @@ pub enum LinterError {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum RuleType {
-    ElementPresence,   // Check if elements exist/don't exist
-    AttributePresence, // Check if attributes exist/don't exist
-    AttributeValue,    // Validate attribute values
-    ElementOrder,      // Check element ordering
-    TextContent,       // Add this new variant
-    ElementContent,    // Check element content
-    WhiteSpace,        // Check whitespace/formatting
-    Nesting,           // Check element nesting
-    Semantics,         // Check semantic rules
-    Custom(String),    // Custom rule type with validation function
+    ElementPresence,
+    AttributePresence,
+    AttributeValue,
+    ElementOrder,
+    TextContent,
+    ElementContent,
+    WhiteSpace,
+    Nesting,
+    Semantics,
+    Compound,
+    Custom(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,6 +107,22 @@ enum MetaTagPattern {
     EndsWith(String),   // Must end with this string
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum CompoundCondition {
+    TextContent {
+        pattern: String,
+    },
+    AttributeValue {
+        attribute: String,
+        pattern: String,
+    },
+    AttributeReference {
+        attribute: String,
+        reference_must_exist: bool,
+    },
+}
+
 impl HtmlLinter {
     pub fn new(rules: Vec<Rule>, options: Option<LinterOptions>) -> Self {
         Self {
@@ -145,6 +163,7 @@ impl HtmlLinter {
                 RuleType::Semantics => {
                     self.check_semantics(&dom, rule, &mut results, &source_lines)?
                 }
+                RuleType::Compound => self.check_rule(&dom, rule, &mut results, &source_lines)?,
                 RuleType::Custom(ref validator) => {
                     self.check_custom(&dom, rule, validator, &mut results, &source_lines)?
                 }
@@ -1138,6 +1157,210 @@ impl HtmlLinter {
             }
         }
 
+        Ok(())
+    }
+
+    fn check_compound_rule(
+        &self,
+        node: &Handle,
+        conditions: &[CompoundCondition],
+        check_mode: &str,
+        rule: &Rule,
+    ) -> bool {
+        // Early return if no conditions
+        if conditions.is_empty() {
+            return false;
+        }
+
+        // Track matching conditions
+        let mut matching_conditions = Vec::new();
+        let mut non_matching_conditions = Vec::new();
+
+        // Check each condition and track results
+        for (index, condition) in conditions.iter().enumerate() {
+            let matches = self.check_single_condition(node, condition, rule);
+
+            if matches {
+                matching_conditions.push((index, condition));
+            } else {
+                non_matching_conditions.push((index, condition));
+            }
+        }
+
+        // Determine final result based on check_mode
+        match check_mode {
+            "any" => {
+                if !matching_conditions.is_empty() {
+                    // Debug info could be logged here
+                    true
+                } else {
+                    // Debug info could be logged here
+                    false
+                }
+            }
+            "all" => {
+                if non_matching_conditions.is_empty() {
+                    // Debug info could be logged here
+                    true
+                } else {
+                    // Debug info could be logged here
+                    false
+                }
+            }
+            unknown_mode => {
+                // Debug info could be logged here
+                false
+            }
+        }
+    }
+
+    fn check_single_condition(
+        &self,
+        node: &Handle,
+        condition: &CompoundCondition,
+        rule: &Rule,
+    ) -> bool {
+        let temp_dom = RcDom {
+            document: node.clone(),
+            errors: vec![],
+            quirks_mode: QuirksMode::NoQuirks,
+        };
+        match condition {
+            CompoundCondition::TextContent { pattern } => {
+                // Use existing rule but override the options for text content check
+                let check_rule = Rule {
+                    name: rule.name.clone(),
+                    rule_type: RuleType::TextContent,
+                    severity: rule.severity.clone(),
+                    selector: rule.selector.clone(),
+                    condition: rule.condition.clone(),
+                    message: rule.message.clone(),
+                    options: {
+                        let mut map = rule.options.clone();
+                        map.insert("pattern".to_string(), pattern.clone());
+                        map
+                    },
+                };
+
+                let mut results = Vec::new();
+                if let Ok(()) = self.check_text_content(&temp_dom, &check_rule, &mut results, &[]) {
+                    !results.is_empty()
+                } else {
+                    false
+                }
+            }
+            CompoundCondition::AttributeValue { attribute, pattern } => {
+                let check_rule = Rule {
+                    name: rule.name.clone(),
+                    rule_type: RuleType::AttributeValue,
+                    severity: rule.severity.clone(),
+                    selector: rule.selector.clone(),
+                    condition: rule.condition.clone(),
+                    message: rule.message.clone(),
+                    options: {
+                        let mut map = rule.options.clone();
+                        map.insert("attributes".to_string(), attribute.clone());
+                        map.insert("pattern".to_string(), pattern.clone());
+                        map
+                    },
+                };
+
+                let mut results = Vec::new();
+                if let Ok(()) =
+                    self.check_attribute_value(&RcDom::default(), &check_rule, &mut results, &[])
+                {
+                    !results.is_empty()
+                } else {
+                    false
+                }
+            }
+            CompoundCondition::AttributeReference {
+                attribute,
+                reference_must_exist,
+            } => {
+                let check_rule = Rule {
+                    name: rule.name.clone(),
+                    rule_type: RuleType::AttributePresence,
+                    severity: rule.severity.clone(),
+                    selector: rule.selector.clone(),
+                    condition: format!(
+                        "{}-{}",
+                        attribute,
+                        if *reference_must_exist {
+                            "required"
+                        } else {
+                            "optional"
+                        }
+                    ),
+                    message: rule.message.clone(),
+                    options: rule.options.clone(),
+                };
+
+                let mut results = Vec::new();
+                if let Ok(()) =
+                    self.check_attribute_presence(&RcDom::default(), &check_rule, &mut results, &[])
+                {
+                    !results.is_empty()
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn element_exists_by_id(&self, root: &Handle, id: &str) -> bool {
+        let mut exists = false;
+        self.walk_dom(root, |node| {
+            if let NodeData::Element { ref attrs, .. } = node.data {
+                let attrs = attrs.borrow();
+                if attrs
+                    .iter()
+                    .any(|attr| attr.name.local.to_string() == "id" && attr.value.to_string() == id)
+                {
+                    exists = true;
+                }
+            }
+        });
+        exists
+    }
+
+    fn check_rule(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
+
+        for element in elements {
+            let check_mode = rule
+                .options
+                .get("check_mode")
+                .map(String::as_str)
+                .unwrap_or("any");
+
+            if let Some(conditions_str) = rule.options.get("conditions") {
+                let conditions: Vec<CompoundCondition> = serde_json::from_str(conditions_str)
+                    .map_err(|e| {
+                        LinterError::RuleError(format!("Invalid conditions JSON: {}", e))
+                    })?;
+
+                let passes = self.check_compound_rule(&element, &conditions, check_mode, rule);
+
+                if !passes {
+                    if let Some(location) = self.get_node_location(&element, source_lines) {
+                        results.push(LintResult {
+                            rule: rule.name.clone(),
+                            severity: rule.severity.clone(),
+                            message: rule.message.clone(),
+                            location,
+                            source: self.get_element_source(&element),
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
