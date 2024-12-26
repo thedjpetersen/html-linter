@@ -35,6 +35,10 @@ pub enum RuleType {
     Semantics,
     Compound,
     Custom(String),
+    DocumentStructure,
+    ElementCount,
+    ElementCase,
+    AttributeQuotes,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -166,6 +170,18 @@ impl HtmlLinter {
                 RuleType::Compound => self.check_rule(&dom, rule, &mut results, &source_lines)?,
                 RuleType::Custom(ref validator) => {
                     self.check_custom(&dom, rule, validator, &mut results, &source_lines)?
+                }
+                RuleType::DocumentStructure => {
+                    self.check_document_structure(&dom, rule, &mut results, &source_lines)?
+                }
+                RuleType::ElementCount => {
+                    self.check_element_count(&dom, rule, &mut results, &source_lines)?
+                }
+                RuleType::ElementCase => {
+                    self.check_element_case(&dom, rule, &mut results, &source_lines)?
+                }
+                RuleType::AttributeQuotes => {
+                    self.check_attribute_quotes(&dom, rule, &mut results, &source_lines)?
                 }
             }
         }
@@ -1381,5 +1397,179 @@ impl HtmlLinter {
 
     pub fn get_rules(&self) -> &Vec<Rule> {
         &self.rules
+    }
+
+    fn check_document_structure(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        match rule.condition.as_str() {
+            "doctype-present" => {
+                let has_doctype = source_lines
+                    .iter()
+                    .any(|line| line.trim().to_lowercase().starts_with("<!doctype"));
+
+                if !has_doctype {
+                    if let Some(location) = self.get_node_location(&dom.document, source_lines) {
+                        results.push(LintResult {
+                            rule: rule.name.clone(),
+                            severity: rule.severity.clone(),
+                            message: rule.message.clone(),
+                            location,
+                            source: "".to_string(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn check_element_count(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
+
+        match rule.condition.as_str() {
+            "max-count" => {
+                let max_count: usize = rule
+                    .options
+                    .get("max")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1);
+
+                if elements.len() > max_count {
+                    if let Some(first_element) = elements.get(max_count) {
+                        if let Some(location) = self.get_node_location(first_element, source_lines)
+                        {
+                            results.push(LintResult {
+                                rule: rule.name.clone(),
+                                severity: rule.severity.clone(),
+                                message: format!(
+                                    "{} (found {}, maximum is {})",
+                                    rule.message,
+                                    elements.len(),
+                                    max_count
+                                ),
+                                location,
+                                source: self.get_element_source(first_element),
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn check_element_case(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
+
+        for element in elements {
+            if let NodeData::Element {
+                ref name,
+                ref attrs,
+                ..
+            } = element.data
+            {
+                let element_name = name.local.to_string();
+                let has_uppercase = element_name.chars().any(|c| c.is_uppercase());
+
+                // Check attributes for uppercase characters
+                let uppercase_attrs: Vec<_> = attrs
+                    .borrow()
+                    .iter()
+                    .filter(|attr| {
+                        attr.name
+                            .local
+                            .to_string()
+                            .chars()
+                            .any(|c| c.is_uppercase())
+                    })
+                    .map(|attr| attr.name.local.to_string())
+                    .collect();
+
+                if has_uppercase || !uppercase_attrs.is_empty() {
+                    if let Some(location) = self.get_node_location(&element, source_lines) {
+                        let mut message = rule.message.clone();
+                        if has_uppercase {
+                            message.push_str(&format!(" (element: {})", element_name));
+                        }
+                        if !uppercase_attrs.is_empty() {
+                            message.push_str(&format!(
+                                " (attributes: {})",
+                                uppercase_attrs.join(", ")
+                            ));
+                        }
+                        results.push(LintResult {
+                            rule: rule.name.clone(),
+                            severity: rule.severity.clone(),
+                            message,
+                            location,
+                            source: self.get_element_source(&element),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_attribute_quotes(
+        &self,
+        dom: &RcDom,
+        rule: &Rule,
+        results: &mut Vec<LintResult>,
+        source_lines: &[&str],
+    ) -> Result<(), LinterError> {
+        let elements = self.get_elements_by_selector(&dom.document, &rule.selector)?;
+        let quote_style = rule
+            .options
+            .get("style")
+            .map(String::as_str)
+            .unwrap_or("double");
+
+        for (line_num, line) in source_lines.iter().enumerate() {
+            let wrong_quotes = match quote_style {
+                "double" => line.contains("='"),
+                "single" => line.contains("=\""),
+                _ => false,
+            };
+
+            if wrong_quotes {
+                for element in elements.iter() {
+                    if let Some(location) = self.get_node_location(element, source_lines) {
+                        if location.line == line_num + 1 {
+                            results.push(LintResult {
+                                rule: rule.name.clone(),
+                                severity: rule.severity.clone(),
+                                message: format!(
+                                    "{} (expected {} quotes)",
+                                    rule.message, quote_style
+                                ),
+                                location,
+                                source: line.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
