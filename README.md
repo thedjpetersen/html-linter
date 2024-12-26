@@ -647,6 +647,73 @@ Example using check modes:
 }
 ```
 
+### DocumentStructure
+
+Validates the overall structure of the HTML document.
+
+```json
+{
+  "name": "require-doctype",
+  "rule_type": "DocumentStructure",
+  "severity": "Error",
+  "selector": "html",
+  "condition": "doctype-present",
+  "message": "HTML document must have a DOCTYPE declaration"
+}
+```
+
+### ElementCount
+
+Enforces limits on the number of specific elements.
+
+```json
+{
+  "name": "single-h1",
+  "rule_type": "ElementCount",
+  "severity": "Error",
+  "selector": "h1",
+  "condition": "max-count",
+  "message": "Page should have only one h1 element",
+  "options": {
+    "max": "1"
+  }
+}
+```
+
+### ElementCase
+
+Enforces consistent casing for element and attribute names.
+
+```json
+{
+  "name": "lowercase-elements",
+  "rule_type": "ElementCase",
+  "severity": "Warning",
+  "selector": "*",
+  "condition": "lowercase",
+  "message": "HTML elements and attributes should be lowercase",
+  "options": {}
+}
+```
+
+### AttributeQuotes
+
+Enforces consistent use of single or double quotes for attribute values.
+
+```json
+{
+  "name": "quote-style",
+  "rule_type": "AttributeQuotes",
+  "severity": "Warning",
+  "selector": "*",
+  "condition": "quote-style",
+  "message": "Use double quotes for attribute values",
+  "options": {
+    "style": "double"
+  }
+}
+```
+
 ## Contributing
 
 Pull requests, bug reports, and feature requests are welcome! Feel free to open an issue or submit a PR if you have ideas to improve the library.
