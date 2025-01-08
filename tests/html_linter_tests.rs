@@ -1,4 +1,4 @@
-use html_linter::{HtmlLinter, LinterOptions, Rule, RuleType, Severity};
+use html_linter::{HtmlLinter, Rule, RuleType, Severity};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -100,7 +100,7 @@ fn test_semantic_structure() {
             options.insert("attributes".to_string(), "class".to_string());
             options.insert(
                 "pattern".to_string(),
-                "^(header|main|footer|article|section|nav)$".to_string(),
+                "^(header|main|footer|article|section|nav|navigation)$".to_string(),
             );
             options.insert("check_mode".to_string(), "ensure_nonexistence".to_string());
             options
@@ -127,7 +127,7 @@ fn test_semantic_structure() {
             "div with navigation class",
         ),
         (
-            r#"<div class="main-content">Main content</div>"#,
+            r#"<div class="main">Main content</div>"#,
             true,
             "div with main class",
         ),
