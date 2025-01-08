@@ -199,20 +199,6 @@ Each rule in the JSON configuration must follow this structure:
 
 6. **WhiteSpace**
 
-   ```json
-   {
-     "name": "line-length",
-     "rule_type": "WhiteSpace",
-     "severity": "Warning",
-     "selector": "*",
-     "condition": "line-length",
-     "message": "Line exceeds maximum length",
-     "options": {
-       "max_line_length": "80"
-     }
-   }
-   ```
-
 7. **Nesting**
 
    ```json
@@ -455,21 +441,7 @@ Validates text content or checks for empty content.
 
 ### WhiteSpace
 
-Checks whitespace and line length constraints.
-
-```json
-{
-  "name": "line-length",
-  "rule_type": "WhiteSpace",
-  "severity": "Warning",
-  "selector": "*",
-  "condition": "line-length",
-  "message": "Line exceeds maximum length",
-  "options": {
-    "max_line_length": "80"
-  }
-}
-```
+**Not implemented**
 
 ### Nesting
 

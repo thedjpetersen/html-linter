@@ -134,43 +134,6 @@ impl HtmlLinter {
         let mut results = Vec::new();
 
         match rule.condition.as_str() {
-            "line-length" => {
-                let max_length = rule
-                    .options
-                    .get("max_line_length")
-                    .and_then(|v| v.parse().ok())
-                    .or(self.options.max_line_length)
-                    .unwrap_or(80);
-
-                let matches = index.query(&rule.selector);
-                for node_idx in matches {
-                    if let Some(node) = index.get_node(node_idx) {
-                        let lines = node.source_info.source.lines();
-                        for (i, line) in lines.enumerate() {
-                            let line_length = line.len();
-                            if line_length > max_length {
-                                results.push(LintResult {
-                                    rule: rule.name.clone(),
-                                    severity: rule.severity.clone(),
-                                    message: format!(
-                                        "Line exceeds maximum length of {} characters",
-                                        max_length
-                                    ),
-                                    location: Location {
-                                        line: node.source_info.line + i,
-                                        column: max_length + 1,
-                                        element: index
-                                            .resolve_symbol(node.tag_name)
-                                            .unwrap_or_default()
-                                            .to_string(),
-                                    },
-                                    source: line.to_string(),
-                                });
-                            }
-                        }
-                    }
-                }
-            }
             "trailing-whitespace" => {
                 let matches = index.query(&rule.selector);
                 for node_idx in matches {

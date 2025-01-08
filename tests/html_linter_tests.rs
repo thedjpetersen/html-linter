@@ -180,38 +180,6 @@ fn test_semantic_structure() {
 }
 
 #[test]
-fn test_custom_options() {
-    let mut options = LinterOptions::default();
-    options.max_line_length = Some(20);
-
-    let rules = vec![Rule {
-        name: "line-length".to_string(),
-        rule_type: RuleType::WhiteSpace,
-        severity: Severity::Warning,
-        selector: "*".to_string(),
-        condition: "line-length".to_string(),
-        message: "Line is too long".to_string(),
-        options: {
-            let mut options = HashMap::new();
-            options.insert("max_line_length".to_string(), "20".to_string());
-            options
-        },
-    }];
-
-    let linter = HtmlLinter::new(rules, Some(options));
-
-    // Test line that's too long
-    let html = r#"<div class="very-long-class-name-that-exceeds-limit">Content</div>"#;
-    let results = linter.lint(html).unwrap();
-    assert!(results.len() > 0);
-
-    // Test acceptable line length
-    let html = r#"<div>Short</div>"#;
-    let results = linter.lint(html).unwrap();
-    assert_eq!(results.len(), 0);
-}
-
-#[test]
 fn test_nested_elements() {
     let rules = vec![Rule {
         name: "input-label".to_string(),
