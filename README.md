@@ -518,7 +518,7 @@ Custom rule logic with a built-in function key (e.g., `"no-empty-links"`).
 
 ### Compound
 
-Allows combining multiple conditions that must all be satisfied (or any of them, depending on configuration).
+Allows combining multiple conditions that must all be satisfied. Supports various check modes and condition types.
 
 ```json
 {
@@ -527,7 +527,7 @@ Allows combining multiple conditions that must all be satisfied (or any of them,
   "severity": "Error",
   "selector": "button",
   "condition": "compound",
-  "message": "Button must have both aria-label and role",
+  "message": "Button must meet accessibility requirements",
   "options": {
     "check_mode": "all",
     "conditions": [
@@ -543,6 +543,91 @@ Allows combining multiple conditions that must all be satisfied (or any of them,
       }
     ]
   }
+}
+```
+
+#### Compound Rule Check Modes
+
+- `all`: All conditions must match (default)
+- `any`: Any condition must match
+- `none`: No conditions should match
+- `exactly_one`: Exactly one condition should match
+- `at_least_one`: At least one condition must match
+- `majority`: More than half of conditions must match
+- `ratio`: Specified ratio of conditions must match (requires "ratio" option)
+- `range`: Number of matching conditions must fall within specified range (requires "min" and "max" options)
+- `consecutive`: Specified number of consecutive conditions must match (requires "count" option)
+- `exclusive_groups`: Only one group of conditions should match (requires "groups" option)
+- `weighted`: Sum of weights for matching conditions must meet threshold (requires "weights" and "threshold" options)
+- `dependency_chain`: Conditions must match in sequence without gaps
+- `alternating`: Conditions must alternate between matching and non-matching
+- `subset_match`: Matching conditions must form a valid subset (requires "valid_sets" option)
+
+Example with advanced check mode:
+
+```json
+{
+  "name": "weighted-conditions",
+  "rule_type": "Compound",
+  "severity": "Error",
+  "selector": "form",
+  "condition": "compound",
+  "message": "Form must meet weighted accessibility requirements",
+  "options": {
+    "check_mode": "weighted",
+    "weights": [0.5, 1.0, 0.8],
+    "threshold": 1.5,
+    "conditions": [
+      {
+        "type": "AttributeValue",
+        "attribute": "aria-label",
+        "pattern": ".+"
+      },
+      {
+        "type": "AttributeValue",
+        "attribute": "role",
+        "pattern": "form"
+      },
+      {
+        "type": "AttributeValue",
+        "attribute": "name",
+        "pattern": ".+"
+      }
+    ]
+  }
+}
+```
+
+#### Compound Rule Condition Types
+
+Compound rules support three types of conditions:
+
+1. **TextContent**
+
+```json
+{
+  "type": "TextContent",
+  "pattern": "^[A-Za-z0-9\\s]{10,}$"
+}
+```
+
+2. **AttributeValue**
+
+```json
+{
+  "type": "AttributeValue",
+  "attribute": "class",
+  "pattern": "^btn-[a-z]+$"
+}
+```
+
+3. **AttributeReference**
+
+```json
+{
+  "type": "AttributeReference",
+  "attribute": "aria-describedby",
+  "reference_must_exist": true
 }
 ```
 

@@ -140,6 +140,7 @@ fn setup_seo_rules() -> Vec<Rule> {
                 let mut options = HashMap::new();
                 options.insert("attributes".to_string(), "defer,async,loading".to_string());
                 options.insert("check_mode".to_string(), "ensure_existence".to_string());
+                options.insert("pattern".to_string(), r#"^(lazy|eager|auto|\d+)$"#.to_string());
                 options
             },
         },
@@ -192,15 +193,16 @@ fn setup_seo_rules() -> Vec<Rule> {
         // International SEO
         Rule {
             name: "hreflang-implementation".to_string(),
-            rule_type: RuleType::ElementPresence,
+            rule_type: RuleType::AttributeValue,
             severity: Severity::Warning,
-            selector: "head".to_string(),
-            condition: "hreflang-complete".to_string(),
+            selector: "link[rel='alternate'][hreflang]".to_string(),
+            condition: "valid-hreflang".to_string(),
             message: "Complete hreflang implementation required for international SEO".to_string(),
             options: {
                 let mut options = HashMap::new();
-                options.insert("require_x_default".to_string(), "true".to_string());
-                options.insert("require_reciprocal".to_string(), "true".to_string());
+                options.insert("pattern".to_string(), r#"^[a-z]{2}(-[A-Z]{2})?$"#.to_string());
+                options.insert("check_mode".to_string(), "ensure_existence".to_string());
+                options.insert("attributes".to_string(), "hreflang".to_string());
                 options
             },
         },
@@ -219,15 +221,12 @@ fn setup_seo_rules() -> Vec<Rule> {
                     r#"[
                         {
                             "type": "AttributeValue",
+                            "selector": "meta[name='viewport']",
                             "attribute": "content",
-                            "pattern": "width=device-width, initial-scale=1"
-                        },
-                        {
-                            "type": "ElementPresence",
-                            "selector": "meta[name='viewport']"
+                            "pattern": "width=device-width, initial-scale=1",
+                            "check_mode": "ensure_existence"
                         }
-                    ]"#
-                    .to_string(),
+                    ]"#.to_string(),
                 );
                 options.insert("check_mode".to_string(), "all".to_string());
                 options
@@ -287,16 +286,20 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ElementPresence",
-                            "selector": "img[loading='lazy']"
+                            "type": "AttributeValue",
+                            "selector": "img",
+                            "attribute": "loading",
+                            "pattern": "^lazy$",
+                            "check_mode": "ensure_existence"
                         },
                         {
                             "type": "AttributeValue",
+                            "selector": "link",
                             "attribute": "rel",
-                            "pattern": "^(preload|prefetch|preconnect)$"
+                            "pattern": "^(preload|prefetch|preconnect)$",
+                            "check_mode": "ensure_existence"
                         }
-                    ]"#
-                    .to_string(),
+                    ]"#.to_string(),
                 );
                 options.insert("check_mode".to_string(), "any".to_string());
                 options
@@ -348,16 +351,25 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ElementPresence",
-                            "selector": "article[itemtype*='Article'] [itemprop='author']"
+                            "type": "AttributeValue",
+                            "selector": "article[itemtype*='Article'] [itemprop='author']",
+                            "attribute": "itemprop",
+                            "pattern": "^author$",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "ElementPresence",
-                            "selector": "time[itemprop='datePublished'], time[itemprop='dateModified']"
+                            "type": "AttributeValue",
+                            "selector": "time",
+                            "attribute": "itemprop",
+                            "pattern": "^(datePublished|dateModified)$",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "ElementPresence",
-                            "selector": ".credentials, .author-bio, [itemprop='citation']"
+                            "type": "AttributeValue",
+                            "selector": ".credentials, .author-bio, [itemprop='citation']",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         }
                     ]"#.to_string(),
                 );
@@ -406,22 +418,21 @@ fn setup_seo_rules() -> Vec<Rule> {
             options: {
                 let mut options = HashMap::new();
                 options.insert(
-                    "required_elements".to_string(),
-                    r#"["header", "main", "footer", "nav", "article", "section", "aside"]"#.to_string(),
-                );
-                options.insert(
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ElementOrder",
-                            "elements": ["header", "nav", "main", "footer"]
+                            "type": "AttributeValue",
+                            "selector": "header, main, footer, nav, article, section, aside",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "ElementNesting",
-                            "rules": {
-                                "article": ["section", "header", "footer"],
-                                "section": ["h1, h2, h3, h4, h5, h6"]
-                            }
+                            "type": "AttributeValue",
+                            "selector": "div > div > div > div > div",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_nonexistence"
                         }
                     ]"#.to_string(),
                 );

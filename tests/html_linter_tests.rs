@@ -1,4 +1,5 @@
 use html_linter::{HtmlLinter, LinterOptions, Rule, RuleType, Severity};
+use serde_json::json;
 use std::collections::HashMap;
 
 fn create_basic_linter() -> HtmlLinter {
@@ -89,12 +90,21 @@ fn test_heading_order() {
 fn test_semantic_structure() {
     let rules = vec![Rule {
         name: "semantic-structure".to_string(),
-        rule_type: RuleType::Semantics,
+        rule_type: RuleType::AttributeValue,
         severity: Severity::Warning,
         selector: "div,span".to_string(),
-        condition: "semantic-structure".to_string(),
+        condition: "attribute-value".to_string(),
         message: "Consider using semantic HTML elements".to_string(),
-        options: HashMap::new(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("attributes".to_string(), "class".to_string());
+            options.insert(
+                "pattern".to_string(),
+                "^(header|main|footer|article|section|nav)$".to_string(),
+            );
+            options.insert("check_mode".to_string(), "ensure_nonexistence".to_string());
+            options
+        },
     }];
 
     let linter = HtmlLinter::new(rules, None);
@@ -179,9 +189,13 @@ fn test_custom_options() {
         rule_type: RuleType::WhiteSpace,
         severity: Severity::Warning,
         selector: "*".to_string(),
-        condition: "max-length".to_string(),
+        condition: "line-length".to_string(),
         message: "Line is too long".to_string(),
-        options: HashMap::new(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("max_line_length".to_string(), "20".to_string());
+            options
+        },
     }];
 
     let linter = HtmlLinter::new(rules, Some(options));
@@ -241,14 +255,14 @@ fn test_seo_rules() {
                 let mut options = HashMap::new();
                 options.insert(
                     "required_meta_tags".to_string(),
-                    r#"[{
+                    json!([{
                         "name": "description",
                         "pattern": {
                             "type": "MinLength",
                             "value": 50
                         },
                         "required": true
-                    }]"#
+                    }])
                     .to_string(),
                 );
                 options
@@ -265,7 +279,7 @@ fn test_seo_rules() {
                 let mut options = HashMap::new();
                 options.insert(
                     "required_meta_tags".to_string(),
-                    r#"[
+                    json!([
                         {
                             "property": "og:type",
                             "pattern": {
@@ -281,7 +295,7 @@ fn test_seo_rules() {
                             },
                             "required": true
                         }
-                    ]"#
+                    ])
                     .to_string(),
                 );
                 options
@@ -298,14 +312,14 @@ fn test_seo_rules() {
                 let mut options = HashMap::new();
                 options.insert(
                     "required_meta_tags".to_string(),
-                    r#"[{
+                    json!([{
                         "name": "viewport",
                         "pattern": {
                             "type": "Exact",
                             "value": "width=device-width, initial-scale=1"
                         },
                         "required": true
-                    }]"#
+                    }])
                     .to_string(),
                 );
                 options
@@ -317,7 +331,8 @@ fn test_seo_rules() {
 
     // Test missing meta description
     let html = r#"<html><head><title>Page Title</title></head><body></body></html>"#;
-    let results = linter.lint(html).unwrap();
+    let unwrapped_results = linter.lint(html);
+    let results: Vec<html_linter::LintResult> = unwrapped_results.unwrap();
     assert!(results.iter().any(|r| r.rule == "meta-description"));
 
     // Test meta description too short
