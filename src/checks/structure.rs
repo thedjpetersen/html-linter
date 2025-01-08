@@ -189,26 +189,3 @@ fn parse_heading_level(tag_name: &str) -> Option<i32> {
         .ok()
         .filter(|&level| level >= 1 && level <= 6)
 }
-
-// Add new helper for section context
-fn get_section_level(node_idx: usize, index: &DOMIndex) -> i32 {
-    let mut level = 1;
-    let mut current = Some(node_idx);
-
-    while let Some(idx) = current {
-        if let Some(node) = index.get_node(idx) {
-            let tag_name = index.resolve_symbol(node.tag_name).unwrap_or_default();
-
-            // HTML5 sectioning elements increase heading level context
-            if matches!(tag_name.as_str(), "article" | "section" | "aside" | "nav") {
-                level += 1;
-            }
-
-            current = node.parent;
-        } else {
-            break;
-        }
-    }
-
-    level
-}

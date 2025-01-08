@@ -413,7 +413,6 @@ fn test_load_rules_from_json() {
 
 #[test]
 fn test_load_rules_from_file() {
-    use std::fs::File;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

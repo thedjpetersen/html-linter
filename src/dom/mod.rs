@@ -48,7 +48,6 @@ pub(crate) struct IndexedAttribute {
 pub(crate) enum QuotesType {
     Single,
     Double,
-    None,
 }
 
 #[derive(Clone, Debug)]
@@ -89,5 +88,29 @@ impl SourceMap {
                 (line + 1, column)
             }
         }
+    }
+}
+
+impl IndexedNode {
+    pub fn get_selector(&self, index: &DOMIndex) -> String {
+        let catch_all_selector = "*".to_string();
+        // Get the tag name
+        let tag = index
+            .resolve_symbol(self.tag_name)
+            .unwrap_or(catch_all_selector)
+            .to_string();
+
+        // If the node has an ID attribute, use that as it's unique
+        if let Some(id_attr) = self
+            .attributes
+            .iter()
+            .find(|attr| index.resolve_symbol(attr.name).unwrap_or_default() == "id")
+        {
+            let id_value = index.resolve_symbol(id_attr.value).unwrap_or_default();
+            return format!("#{}", id_value);
+        }
+
+        // Otherwise return the tag name with a unique index
+        return format!("#{}", tag);
     }
 }

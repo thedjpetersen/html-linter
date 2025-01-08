@@ -115,7 +115,7 @@ impl HtmlLinter {
     }
 
     #[inline]
-    fn has_duplicate_attributes(node: &IndexedNode, index: &DOMIndex) -> bool {
+    fn has_duplicate_attributes(node: &IndexedNode, _index: &DOMIndex) -> bool {
         let source = &node.source_info.source;
         let mut seen_attributes = std::collections::HashMap::new();
         let mut pos = 0;

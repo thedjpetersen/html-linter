@@ -1,6 +1,39 @@
 use crate::dom::utils::extract_text;
 use crate::*;
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum CompoundCondition {
+    TextContent {
+        pattern: String,
+    },
+    AttributeValue {
+        attribute: String,
+        pattern: String,
+        #[serde(default = "default_check_mode")]
+        check_mode: String,
+        #[serde(default)]
+        selector: String,
+    },
+    AttributeReference {
+        attribute: String,
+        reference_must_exist: bool,
+    },
+    ElementPresence {
+        selector: String,
+    },
+    Compound {
+        selector: String,
+        conditions: Vec<CompoundCondition>,
+        #[serde(default = "default_check_mode")]
+        check_mode: String,
+    },
+}
+
+fn default_check_mode() -> String {
+    "ensure_existence".to_string()
+}
+
 impl HtmlLinter {
     pub(crate) fn check_custom(
         &self,
@@ -122,9 +155,6 @@ impl HtmlLinter {
                         total_weight < threshold
                     }
                     "dependency_chain" => {
-                        // Check if there's a gap between any matching conditions
-                        // Example: [true, true, false, true] -> should report error
-                        //          [true, true, true, false] -> should not report error
                         let first_false = matching_conditions.iter().position(|&x| !x);
                         let any_true_after = first_false
                             .map(|pos| matching_conditions[pos..].iter().any(|&x| x))
@@ -265,10 +295,15 @@ impl HtmlLinter {
                                 CompoundCondition::TextContent { pattern } => {
                                     format!("{} Text content pattern '{}' match", status, pattern)
                                 }
-                                CompoundCondition::AttributeValue { attribute, pattern } => {
+                                CompoundCondition::AttributeValue {
+                                    attribute,
+                                    pattern,
+                                    check_mode,
+                                    selector,
+                                } => {
                                     format!(
-                                        "{} Attribute '{}' matching pattern '{}'",
-                                        status, attribute, pattern
+                                        "{} Attribute '{}' matching pattern '{}' with selector '{}' and check mode '{}'",
+                                        status, attribute, pattern, selector, check_mode
                                     )
                                 }
                                 CompoundCondition::AttributeReference {
@@ -286,9 +321,23 @@ impl HtmlLinter {
                                 ),
                                 CompoundCondition::ElementPresence { selector } => {
                                     format!(
-                                        "{} Element presence {}",
+                                        "{} Element presence with selector '{}' {}",
                                         status,
+                                        selector,
                                         if matched { "exists" } else { "does not exist" }
+                                    )
+                                }
+                                CompoundCondition::Compound {
+                                    selector,
+                                    conditions,
+                                    check_mode,
+                                } => {
+                                    format!(
+                                        "{} Compound condition with selector '{}' and check mode '{}' and {} conditions",
+                                        status,
+                                        selector,
+                                        check_mode,
+                                        conditions.len()
                                     )
                                 }
                             }
@@ -328,6 +377,43 @@ impl HtmlLinter {
         index: &DOMIndex,
     ) -> bool {
         match condition {
+            CompoundCondition::Compound {
+                selector,
+                conditions,
+                check_mode,
+            } => {
+                let nested_selector = if selector.is_empty() {
+                    format!("#{}", node_idx)
+                } else {
+                    let current_node = index.get_node(node_idx).unwrap();
+                    format!("{} {}", current_node.get_selector(index), selector)
+                };
+
+                let nested_matches = index.query(&nested_selector);
+                let mut results = Vec::new();
+
+                for nested_node_idx in nested_matches {
+                    let nested_results: Vec<bool> = conditions
+                        .iter()
+                        .map(|cond| self.check_single_condition(cond, nested_node_idx, index))
+                        .collect();
+
+                    let matches = match check_mode.as_str() {
+                        "all" => nested_results.iter().all(|&x| x),
+                        "any" => nested_results.iter().any(|&x| x),
+                        "none" => !nested_results.iter().any(|&x| x),
+                        "exactly_one" => nested_results.iter().filter(|&&x| x).count() == 1,
+                        _ => nested_results.iter().all(|&x| x),
+                    };
+                    results.push(matches);
+                }
+
+                if results.is_empty() {
+                    return false;
+                }
+
+                results.iter().any(|&x| x)
+            }
             CompoundCondition::TextContent { pattern } => {
                 let node = index.get_node(node_idx).unwrap();
                 let mut content = String::new();
@@ -343,16 +429,50 @@ impl HtmlLinter {
                     false
                 }
             }
-            CompoundCondition::AttributeValue { attribute, pattern } => {
-                if let Some(node) = index.get_node(node_idx) {
-                    if let Ok(regex) = Regex::new(pattern) {
-                        return node.attributes.iter().any(|attr| {
-                            let name = index.resolve_symbol(attr.name).unwrap_or_default();
-                            let value = index.resolve_symbol(attr.value).unwrap_or_default();
-                            name == *attribute
-                                && !value.trim().is_empty()
-                                && regex.is_match(value.trim())
-                        });
+            CompoundCondition::AttributeValue {
+                attribute,
+                pattern,
+                check_mode,
+                selector,
+            } => {
+                let target_nodes = if selector.is_empty() {
+                    vec![node_idx]
+                } else {
+                    let current_node = index.get_node(node_idx).unwrap();
+                    let scoped_selector =
+                        format!("{} {}", current_node.get_selector(index), selector);
+                    index.query(&scoped_selector)
+                };
+
+                for target_idx in target_nodes {
+                    if let Some(node) = index.get_node(target_idx) {
+                        if let Ok(regex) = Regex::new(pattern) {
+                            let matches = node.attributes.iter().any(|attr| {
+                                let name = index.resolve_symbol(attr.name).unwrap_or_default();
+                                let value = index.resolve_symbol(attr.value).unwrap_or_default();
+                                name == *attribute
+                                    && !value.trim().is_empty()
+                                    && regex.is_match(value.trim())
+                            });
+
+                            match check_mode.as_str() {
+                                "ensure_existence" => {
+                                    if matches {
+                                        return true;
+                                    }
+                                }
+                                "ensure_nonexistence" => {
+                                    if !matches {
+                                        return true;
+                                    }
+                                }
+                                _ => {
+                                    if matches {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 false
@@ -376,10 +496,8 @@ impl HtmlLinter {
                 false
             }
             CompoundCondition::ElementPresence { selector } => {
-                // Check if any elements matching the selector exist within the current node's scope
-                if let Some(_node) = index.get_node(node_idx) {
-                    // Create a scoped selector by prepending the current node's selector
-                    let current_selector = format!("{} {}", selector, selector);
+                if let Some(node) = index.get_node(node_idx) {
+                    let current_selector = format!("{} {}", node.get_selector(index), selector);
                     let matches = index.query(&current_selector);
                     !matches.is_empty()
                 } else {

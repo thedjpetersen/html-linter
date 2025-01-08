@@ -1,7 +1,6 @@
 use crate::*;
 use regex::Regex;
 use serde::Deserialize;
-use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 struct MetaTagRule {

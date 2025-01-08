@@ -319,8 +319,11 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ElementPresence",
-                            "selector": "h1 + p, h2 + p, h3 + p"
+                            "type": "AttributeValue",
+                            "selector": "h1 + p, h2 + p, h3 + p",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
                             "type": "TextContent",
@@ -329,7 +332,8 @@ fn setup_seo_rules() -> Vec<Rule> {
                         {
                             "type": "AttributeValue",
                             "attribute": "data-content-type",
-                            "pattern": "^(article|guide|tutorial|product)$"
+                            "pattern": "^(article|guide|tutorial|product)$",
+                            "check_mode": "ensure_existence"
                         }
                     ]"#.to_string(),
                 );
@@ -390,17 +394,25 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ElementPresence",
-                            "selector": "main[role='main'], [aria-label]"
+                            "type": "AttributeValue",
+                            "selector": "main[role='main'], [aria-label]",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
                             "type": "AttributeValue",
+                            "selector": "*",
                             "attribute": "class",
-                            "pattern": ".*(?:container|wrapper|content).*"
+                            "pattern": ".*(?:container|wrapper|content).*",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "ElementAbsence",
-                            "selector": "div > div > div > div > div"
+                            "type": "AttributeValue",
+                            "selector": "div > div > div > div > div",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_nonexistence"
                         }
                     ]"#.to_string(),
                 );
@@ -513,17 +525,78 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "ResourceHints",
-                            "required": ["preconnect", "preload", "prefetch"]
+                            "type": "AttributeValue",
+                            "selector": "link[rel='preconnect'], link[rel='preload'], link[rel='prefetch']",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "ImageOptimization",
-                            "formats": ["webp", "avif"],
-                            "attributes": ["srcset", "sizes", "loading"]
+                            "type": "Compound",
+                            "selector": "img, picture",
+                            "conditions": [
+                                {
+                                    "type": "AttributeValue",
+                                    "selector": "source[type='image/webp']",
+                                    "attribute": "srcset",
+                                    "pattern": ".*\\.webp(\\s+\\d+[wx])?(,\\s*.*\\.webp(\\s+\\d+[wx])?)*",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "selector": "source[type='image/avif']",
+                                    "attribute": "srcset",
+                                    "pattern": ".*\\.avif(\\s+\\d+[wx])?(,\\s*.*\\.avif(\\s+\\d+[wx])?)*",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "selector": "img",
+                                    "attribute": "loading",
+                                    "pattern": "^lazy$",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "selector": "img",
+                                    "attribute": "decoding",
+                                    "pattern": "^async$",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "selector": "img, source",
+                                    "attribute": "sizes",
+                                    "pattern": "^\\([^)]+\\)\\s+\\d+[vw]px(,\\s*\\([^)]+\\)\\s+\\d+[vw]px)*",
+                                    "check_mode": "ensure_existence"
+                                }
+                            ],
+                            "check_mode": "all"
                         },
                         {
-                            "type": "ScriptOptimization",
-                            "attributes": ["async", "defer", "type='module'"]
+                            "type": "Compound",
+                            "selector": "script:not([type='application/ld+json'])",
+                            "conditions": [
+                                {
+                                    "type": "AttributeValue",
+                                    "attribute": "type",
+                                    "pattern": "^(module|application/javascript)$",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "attribute": "async|defer",
+                                    "pattern": "^(|async|defer)$",
+                                    "check_mode": "ensure_existence"
+                                },
+                                {
+                                    "type": "AttributeValue",
+                                    "attribute": "src",
+                                    "pattern": "^(https://|/)",
+                                    "check_mode": "ensure_existence"
+                                }
+                            ],
+                            "check_mode": "all"
                         }
                     ]"#.to_string(),
                 );
@@ -544,16 +617,25 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "NoScript",
-                            "required": true
+                            "type": "AttributeValue",
+                            "selector": "noscript",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "FallbackContent",
-                            "selectors": ["picture > img", "video > p"]
+                            "type": "AttributeValue",
+                            "selector": "picture > img, video > p",
+                            "attribute": "*",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "CriticalCSS",
-                            "required": true
+                            "type": "AttributeValue",
+                            "selector": "style[data-critical]",
+                            "attribute": "data-critical",
+                            "pattern": ".*",
+                            "check_mode": "ensure_existence"
                         }
                     ]"#.to_string(),
                 );
@@ -574,16 +656,107 @@ fn setup_seo_rules() -> Vec<Rule> {
                     "conditions".to_string(),
                     r#"[
                         {
-                            "type": "LanguageAttributes",
-                            "elements": ["html", "body", "[lang]"]
+                            "type": "AttributeValue",
+                            "selector": "html",
+                            "attribute": "lang",
+                            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "TranslationReadiness",
-                            "attributes": ["data-i18n", "translate"]
+                            "type": "AttributeValue",
+                            "selector": "[lang]",
+                            "attribute": "lang",
+                            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+                            "check_mode": "ensure_existence"
                         },
                         {
-                            "type": "RegionalContent",
-                            "required": ["datetime", "currency", "measurement"]
+                            "type": "AttributeValue",
+                            "selector": "[data-i18n]",
+                            "attribute": "data-i18n",
+                            "pattern": "^[\\w.-]+$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "[translate]",
+                            "attribute": "translate",
+                            "pattern": "^(yes|no)$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "time",
+                            "attribute": "datetime",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2})?)?([+-]\\d{2}:?\\d{2}|Z)?$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "[data-currency]",
+                            "attribute": "data-currency",
+                            "pattern": "^[A-Z]{3}$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "[data-measurement]",
+                            "attribute": "data-measurement",
+                            "pattern": "^(metric|imperial)$",
+                            "check_mode": "ensure_existence"
+                        }
+                    ]"#.to_string(),
+                );
+                options
+            },
+        },
+        // Image Optimization Compound
+        Rule {
+            name: "image-optimization-compound".to_string(),
+            rule_type: RuleType::Compound,
+            severity: Severity::Warning,
+            selector: "img".to_string(),
+            condition: "all-conditions-met".to_string(),
+            message: "Images should implement all modern optimization techniques".to_string(),
+            options: {
+                let mut options = HashMap::new();
+                options.insert("check_mode".to_string(), "all".to_string());
+                options.insert(
+                    "conditions".to_string(),
+                    r#"[
+                        {
+                            "type": "AttributeValue",
+                            "selector": "source[type='image/webp']",
+                            "attribute": "srcset",
+                            "pattern": ".*\\.webp(\\s+\\d+w)?(,\\s*.*\\.webp(\\s+\\d+w)?)*",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "source[type='image/avif']",
+                            "attribute": "srcset",
+                            "pattern": ".*\\.avif(\\s+\\d+w)?(,\\s*.*\\.avif(\\s+\\d+w)?)*",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "img",
+                            "attribute": "loading",
+                            "pattern": "^lazy$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "img",
+                            "attribute": "decoding",
+                            "pattern": "^async$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "picture, img",
+                            "attribute": "sizes",
+                            "pattern": "^\\([^)]+\\)\\s+\\d+[vw]px(,\\s*\\([^)]+\\)\\s+\\d+[vw]px)*",
+                            "check_mode": "ensure_existence"
                         }
                     ]"#.to_string(),
                 );
@@ -1061,5 +1234,76 @@ fn test_mobile_viewport() {
         results.iter().filter(|r| r.rule == "viewport-meta").count(),
         0,
         "Should accept valid viewport meta tag"
+    );
+}
+
+#[test]
+fn test_image_optimization_compound() {
+    let linter = HtmlLinter::new(setup_seo_rules(), None);
+
+    // Test case with all optimizations
+    let html = r#"
+        <picture>
+            <source 
+                type="image/avif" 
+                srcset="image.avif 1x, image@2x.avif 2x"
+                sizes="(max-width: 768px) 100vw, 50vw"
+            />
+            <source 
+                type="image/webp" 
+                srcset="image.webp 1x, image@2x.webp 2x"
+                sizes="(max-width: 768px) 100vw, 50vw"
+            />
+            <img 
+                src="image.jpg" 
+                loading="lazy"
+                decoding="async"
+                sizes="(max-width: 768px) 100vw, 50vw"
+                alt="Optimized image"
+            />
+        </picture>
+    "#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| r.rule == "image-optimization-compound")
+            .count(),
+        0,
+        "Should pass when all optimizations are present"
+    );
+
+    // Test case missing optimizations
+    let html = r#"
+        <img src="image.jpg" alt="Non-optimized image">
+    "#;
+    let results = linter.lint(html).unwrap();
+    assert!(
+        results
+            .iter()
+            .any(|r| r.rule == "image-optimization-compound"),
+        "Should fail when optimizations are missing"
+    );
+
+    // Test case with partial optimizations
+    let html = r#"
+        <picture>
+            <source 
+                type="image/webp" 
+                srcset="image.webp"
+            />
+            <img 
+                src="image.jpg" 
+                loading="lazy"
+                alt="Partially optimized image"
+            />
+        </picture>
+    "#;
+    let results = linter.lint(html).unwrap();
+    assert!(
+        results
+            .iter()
+            .any(|r| r.rule == "image-optimization-compound"),
+        "Should fail when some optimizations are missing"
     );
 }

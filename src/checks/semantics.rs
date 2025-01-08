@@ -71,7 +71,7 @@ impl HtmlLinter {
                 let has_button_attributes = node.attributes.iter().any(|attr| {
                     let name = index.resolve_symbol(attr.name).unwrap_or_default();
                     let value = index.resolve_symbol(attr.value).unwrap_or_default();
-                    (name == "onclick" || name == "role" && value == "button")
+                    name == "onclick" || name == "role" && value == "button"
                 });
 
                 if has_button_attributes {
