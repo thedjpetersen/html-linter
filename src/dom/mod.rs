@@ -1,4 +1,5 @@
 pub(crate) mod index;
+pub(crate) mod select;
 pub(crate) mod utils;
 
 use markup5ever_rcdom::Handle;

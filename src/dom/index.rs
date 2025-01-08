@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use string_interner::DefaultSymbol;
 use string_interner::StringInterner;
 
+use super::select::{AttributeSelector, SelectorEngine};
 use crate::dom::{IndexedAttribute, IndexedNode, QuotesType, SourceInfo, SourceMap};
 // Optimized arena with pre-allocated capacity
 pub struct NodeArena {
@@ -34,36 +35,13 @@ impl NodeArena {
     }
 }
 
-// Optimized to use DefaultStringInterner directly
-#[derive(Clone, Debug)]
-pub enum AttributeSelector {
-    Exists(DefaultSymbol),                    // [attr]
-    Equals(DefaultSymbol, DefaultSymbol),     // [attr=value]
-    StartsWith(DefaultSymbol, DefaultSymbol), // [attr^=value]
-    EndsWith(DefaultSymbol, DefaultSymbol),   // [attr$=value]
-    Contains(DefaultSymbol, DefaultSymbol),   // [attr*=value]
-}
-
-#[derive(Clone, Debug)]
-pub struct Selector {
-    alternatives: Vec<SelectorPart>,
-}
-
-#[derive(Clone, Debug)]
-pub struct SelectorPart {
-    element: Option<DefaultSymbol>,
-    classes: Vec<DefaultSymbol>,
-    id: Option<DefaultSymbol>,
-    attributes: Vec<AttributeSelector>,
-}
-
 pub struct DOMIndex {
     pub arena: NodeArena,
     elements: HashMap<DefaultSymbol, Vec<usize>>,
     ids: HashMap<DefaultSymbol, usize>,
     classes: HashMap<DefaultSymbol, Vec<usize>>,
     interner: RwLock<StringInterner>,
-    selector_cache: RwLock<HashMap<String, Selector>>,
+    selector_engine: SelectorEngine,
     source_map: SourceMap,
     source: String,
 }
@@ -76,7 +54,7 @@ impl DOMIndex {
             ids: HashMap::with_capacity(256),
             classes: HashMap::with_capacity(256),
             interner: RwLock::new(StringInterner::with_capacity(1024)),
-            selector_cache: RwLock::new(HashMap::with_capacity(64)),
+            selector_engine: SelectorEngine::new(),
             source_map: SourceMap::new(source),
             source: source.to_string(),
         };
@@ -86,21 +64,9 @@ impl DOMIndex {
     }
 
     pub fn query(&self, selector: &str) -> Vec<usize> {
-        // Fast path: check cache first with read lock
-        let selector = {
-            let cache = self.selector_cache.read();
-            match cache.get(selector) {
-                Some(sel) => sel.clone(),
-                None => {
-                    drop(cache);
-                    let sel = self.parse_selector(selector);
-                    self.selector_cache
-                        .write()
-                        .insert(selector.to_string(), sel.clone());
-                    sel
-                }
-            }
-        };
+        let selector = self
+            .selector_engine
+            .get_or_parse_selector(selector, &self.interner);
 
         // Collect matches from all alternatives
         let mut results = Vec::new();
@@ -197,173 +163,6 @@ impl DOMIndex {
         results.sort_unstable();
         results.dedup();
         results
-    }
-
-    fn parse_selector(&self, selector: &str) -> Selector {
-        // Handle universal selector "*" explicitly
-        if selector == "*" {
-            return Selector {
-                alternatives: vec![SelectorPart {
-                    element: None,
-                    classes: Vec::new(),
-                    id: None,
-                    attributes: Vec::new(),
-                }],
-            };
-        }
-
-        let mut alternatives = Vec::new();
-
-        // Split by commas and handle each part
-        for part in selector.split(',') {
-            let part = part.trim(); // Handle potential spaces after commas
-            if part.is_empty() {
-                continue;
-            }
-
-            let mut element = None;
-            let mut classes = Vec::with_capacity(4);
-            let mut id = None;
-            let mut attributes = Vec::new();
-            let mut token = String::with_capacity(32);
-            let mut chars = part.chars().peekable();
-
-            while let Some(c) = chars.next() {
-                match c {
-                    '[' => {
-                        if !token.is_empty() {
-                            element = Some(self.interner.write().get_or_intern(&token));
-                            token.clear();
-                        }
-
-                        // Parse attribute name
-                        while let Some(&c) = chars.peek() {
-                            if c == '=' || c == '^' || c == '$' || c == '*' || c == ']' {
-                                break;
-                            }
-                            token.push(chars.next().unwrap());
-                        }
-                        let attr_name = self.interner.write().get_or_intern(&token);
-                        token.clear();
-
-                        // Parse operator and value if present
-                        match chars.next() {
-                            Some(']') => {
-                                attributes.push(AttributeSelector::Exists(attr_name));
-                            }
-                            Some('=') => {
-                                // Skip quote if present
-                                if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                    chars.next();
-                                }
-
-                                while let Some(&c) = chars.peek() {
-                                    if c == '"' || c == '\'' || c == ']' {
-                                        break;
-                                    }
-                                    token.push(chars.next().unwrap());
-                                }
-
-                                // Skip closing quote if present
-                                if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                    chars.next();
-                                }
-
-                                let value = self.interner.write().get_or_intern(&token);
-                                attributes.push(AttributeSelector::Equals(attr_name, value));
-                                token.clear();
-
-                                // Skip closing bracket
-                                chars.next();
-                            }
-                            Some(c) => {
-                                match c {
-                                    '^' | '$' | '*' => {
-                                        let op = c;
-                                        // Skip = character
-                                        chars.next();
-
-                                        // Skip quote if present
-                                        if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                            chars.next();
-                                        }
-
-                                        while let Some(&c) = chars.peek() {
-                                            if c == '"' || c == '\'' || c == ']' {
-                                                break;
-                                            }
-                                            token.push(chars.next().unwrap());
-                                        }
-
-                                        // Skip closing quote if present
-                                        if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                            chars.next();
-                                        }
-
-                                        let value = self.interner.write().get_or_intern(&token);
-                                        let selector = match op {
-                                            '^' => AttributeSelector::StartsWith(attr_name, value),
-                                            '$' => AttributeSelector::EndsWith(attr_name, value),
-                                            '*' => AttributeSelector::Contains(attr_name, value),
-                                            _ => unreachable!(),
-                                        };
-                                        attributes.push(selector);
-                                        token.clear();
-
-                                        // Skip closing bracket
-                                        chars.next();
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            None => break,
-                        }
-                    }
-                    '#' => {
-                        if !token.is_empty() {
-                            element = Some(self.interner.write().get_or_intern(&token));
-                            token.clear();
-                        }
-                        while let Some(&c) = chars.peek() {
-                            if c == '.' || c == '#' {
-                                break;
-                            }
-                            token.push(chars.next().unwrap());
-                        }
-                        id = Some(self.interner.write().get_or_intern(&token));
-                        token.clear();
-                    }
-                    '.' => {
-                        if !token.is_empty() {
-                            element = Some(self.interner.write().get_or_intern(&token));
-                            token.clear();
-                        }
-                        while let Some(&c) = chars.peek() {
-                            if c == '.' || c == '#' {
-                                break;
-                            }
-                            token.push(chars.next().unwrap());
-                        }
-                        classes.push(self.interner.write().get_or_intern(&token));
-                        token.clear();
-                    }
-                    _ => token.push(c),
-                }
-            }
-
-            if !token.is_empty() {
-                element = Some(self.interner.write().get_or_intern(&token));
-            }
-
-            alternatives.push(SelectorPart {
-                element,
-                classes,
-                id,
-                attributes,
-            });
-        }
-
-        Selector { alternatives }
     }
 
     fn build_from_node(&mut self, handle: &markup5ever_rcdom::Handle) -> usize {
