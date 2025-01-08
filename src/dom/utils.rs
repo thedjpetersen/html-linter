@@ -36,14 +36,14 @@ impl _NodeExt for Handle {
 }
 
 pub(crate) fn extract_text(handle: &Handle, output: &mut String) {
-    match handle.data {
-        NodeData::Text { ref contents } => {
-            output.push_str(&contents.borrow());
-        }
-        _ => {
-            for child in handle.children.borrow().iter() {
-                extract_text(child, output);
-            }
+    if let NodeData::Text { ref contents } = handle.data {
+        output.push_str(&contents.borrow());
+    }
+
+    // Only get direct text nodes, skip recursing into elements
+    for child in handle.children.borrow().iter() {
+        if let NodeData::Text { .. } = child.data {
+            extract_text(child, output);
         }
     }
 }

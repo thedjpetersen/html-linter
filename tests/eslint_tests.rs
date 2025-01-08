@@ -71,20 +71,6 @@ fn setup_eslint_rules() -> Vec<Rule> {
             },
         },
         Rule {
-            name: "no-extra-spacing-text".to_string(),
-            rule_type: RuleType::TextContent,
-            severity: Severity::Warning,
-            selector: "*".to_string(),
-            condition: "consecutive-spaces".to_string(),
-            message: "Unnecessary consecutive spaces are not allowed".to_string(),
-            options: {
-                let mut options = HashMap::new();
-                options.insert("pattern".to_string(), r#"\s{2,}"#.to_string());
-                options.insert("check_mode".to_string(), "ensure_nonexistence".to_string());
-                options
-            },
-        },
-        Rule {
             name: "no-obsolete-tags".to_string(),
             rule_type: RuleType::ElementPresence,
             severity: Severity::Error,

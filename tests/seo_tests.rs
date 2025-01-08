@@ -107,18 +107,12 @@ fn setup_seo_rules() -> Vec<Rule> {
                         },
                         {
                             "property": "og:image",
-                            "pattern": {
-                                "type": "Regex",
-                                "value": "^https://.+\\.(jpg|jpeg|png|webp)$"
-                            },
+                            "pattern": "^https://.+\\.(jpg|jpeg|png|webp)$",
                             "required": true
                         },
                         {
                             "property": "og:url",
-                            "pattern": {
-                                "type": "Regex",
-                                "value": "^https://"
-                            },
+                            "pattern": "^https://",
                             "required": true
                         }
                     ]"#
