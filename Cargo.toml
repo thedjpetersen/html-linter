@@ -1,9 +1,10 @@
 [package]
 name = "html-linter"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "An HTML linting library for checking HTML structure and semantics"
 license = "MIT"
+documentation = "https://docs.rs/html-linter"
 
 [dependencies]
 html5ever = "0.26"
