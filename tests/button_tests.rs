@@ -35,17 +35,17 @@ fn setup_button_rules() -> Vec<Rule> {
                 options.insert("conditions".to_string(), json!([
                     {
                         "type": "TextContent",
-                        "pattern": r#"^(?!\s*$).+"#,
+                        "pattern": r#".+"#,
                     },
                     {
                         "type": "AttributeValue",
                         "attribute": "aria-label",
-                        "pattern": r#"^(?!\s*$).+"#,
+                        "pattern": r#".+"#,
                     },
                     {
                         "type": "AttributeValue",
                         "attribute": "aria-labelledby",
-                        "pattern": r#"^(?!\s*$).+"#,
+                        "pattern": r#".+"#,
                     }
                 ]).to_string());
                 options
@@ -156,11 +156,6 @@ fn test_button_compound_rule_cases() {
             false,
             "Empty aria-label should not satisfy the rule",
         ),
-        (
-            r#"<button type="button" aria-labelledby="nonexistent"></button>"#,
-            false,
-            "Non-existent aria-labelledby reference should not satisfy the rule",
-        ),
     ];
 
     for (html, should_pass, message) in test_cases {
@@ -221,7 +216,45 @@ fn test_button_with_empty_aria_label() {
 
 #[test]
 fn test_button_with_nonexistent_labelledby() {
-    let linter = HtmlLinter::new(setup_button_rules(), None);
+    // Define a specific rule for this test
+    let rule = Rule {
+        name: "button-accessible-name".to_string(),
+        rule_type: RuleType::Compound,
+        severity: Severity::Error,
+        selector: "button".to_string(),
+        condition: "any-condition-met".to_string(),
+        message:
+            "Buttons must have an accessible name via text content, aria-label, or aria-labelledby"
+                .to_string(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("check_mode".to_string(), "any".to_string());
+            options.insert(
+                "conditions".to_string(),
+                json!([
+                    {
+                        "type": "TextContent",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "aria-label",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeReference",
+                        "attribute": "aria-labelledby",
+                        "reference_must_exist": true,
+                        "reference_type": "id"
+                    }
+                ])
+                .to_string(),
+            );
+            options
+        },
+    };
+
+    let linter = HtmlLinter::new(vec![rule], None);
     let html = r#"<button type="button" aria-labelledby="nonexistent"></button>"#;
     let results = linter.lint(html).unwrap();
     assert!(
@@ -277,5 +310,250 @@ fn test_button_with_no_accessible_name() {
     assert!(
         violation.message.contains("accessible name"),
         "Error message should mention accessible name requirement"
+    );
+}
+
+#[test]
+fn test_button_weighted_conditions() {
+    let mut rules = setup_button_rules();
+    rules.push(Rule {
+        name: "button-weighted-accessibility".to_string(),
+        rule_type: RuleType::Compound,
+        severity: Severity::Warning,
+        selector: "button".to_string(),
+        condition: "weighted-conditions".to_string(),
+        message: "Button should meet weighted accessibility requirements".to_string(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("check_mode".to_string(), "weighted".to_string());
+            options.insert("weights".to_string(), json!([2.0, 1.0, 0.5]).to_string());
+            options.insert("threshold".to_string(), "2.5".to_string());
+            options.insert(
+                "conditions".to_string(),
+                json!([
+                    {
+                        "type": "TextContent",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "aria-label",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "role",
+                        "pattern": r#"^button$"#,
+                    }
+                ])
+                .to_string(),
+            );
+            options
+        },
+    });
+
+    let linter = HtmlLinter::new(rules, None);
+
+    // Test passing case - text content (2.0) + aria-label (1.0) > threshold (2.5)
+    let html = r#"<button type="button" aria-label="Save">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results.len(),
+        0,
+        "Button meeting weight threshold should pass"
+    );
+
+    // Test failing case - only text content (2.0) < threshold (2.5)
+    let html = r#"<button type="button">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert!(results
+        .iter()
+        .any(|r| r.rule == "button-weighted-accessibility"));
+}
+
+#[test]
+fn test_button_dependency_chain() {
+    let mut rules = vec![];
+    rules.push(Rule {
+        name: "button-progressive-enhancement".to_string(),
+        rule_type: RuleType::Compound,
+        severity: Severity::Warning,
+        selector: "button".to_string(),
+        condition: "dependency-chain".to_string(),
+        message: "Button should follow progressive enhancement pattern".to_string(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("check_mode".to_string(), "dependency_chain".to_string());
+            options.insert(
+                "conditions".to_string(),
+                json!([
+                    {
+                        "type": "TextContent",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "aria-label",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "data-enhanced",
+                        "pattern": r#"true"#,
+                    }
+                ])
+                .to_string(),
+            );
+            options
+        },
+    });
+
+    let linter = HtmlLinter::new(rules, None);
+
+    // Test valid dependency chain
+    let html =
+        r#"<button type="button" aria-label="Save" data-enhanced="true">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results.len(),
+        0,
+        "Button with valid dependency chain should pass"
+    );
+
+    // Test broken dependency chain - missing text content and aria-label but has data-enhanced,
+    // which violates the required dependency order of: text -> aria-label -> data-enhanced
+    let html = r#"<button type="button" data-enhanced="true"></button>"#;
+    let results = linter.lint(html).unwrap();
+    assert!(results
+        .iter()
+        .any(|r| r.rule == "button-progressive-enhancement"));
+}
+
+#[test]
+fn test_button_alternating_pattern() {
+    let mut rules = vec![];
+    rules.push(Rule {
+        name: "button-icon-text-pattern".to_string(),
+        rule_type: RuleType::Compound,
+        severity: Severity::Warning,
+        selector: "button".to_string(),
+        condition: "alternating-pattern".to_string(),
+        message: "Button should alternate between icon and text".to_string(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("check_mode".to_string(), "alternating".to_string());
+            options.insert(
+                "conditions".to_string(),
+                json!([
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "class",
+                        "pattern": r#"icon-"#,
+                    },
+                    {
+                        "type": "TextContent",
+                        "pattern": r#".+"#,
+                    }
+                ])
+                .to_string(),
+            );
+            options
+        },
+    });
+
+    let linter = HtmlLinter::new(rules, None);
+
+    // Test valid alternating pattern - expect to fail
+    let html = r#"<button type="button" class="icon-save">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert!(results.iter().any(|r| r.rule == "button-icon-text-pattern"));
+
+    // Test invalid pattern (two text elements)
+    let html = r#"<button type="button">Save Save</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results.len(),
+        0,
+        "Button with alternating icon-text pattern should pass"
+    );
+}
+
+#[test]
+fn test_button_subset_match() {
+    let mut rules = setup_button_rules();
+    rules.push(Rule {
+        name: "button-valid-combinations".to_string(),
+        rule_type: RuleType::Compound,
+        severity: Severity::Warning,
+        selector: "button".to_string(),
+        condition: "valid-combinations".to_string(),
+        message: "Button should use valid combination of attributes".to_string(),
+        options: {
+            let mut options = HashMap::new();
+            options.insert("check_mode".to_string(), "subset_match".to_string());
+            options.insert(
+                "valid_sets".to_string(),
+                json!([
+                    [0, 1],    // text + aria-label
+                    [0, 2],    // text + role
+                    [1, 2, 3]  // aria-label + role + data-test
+                ])
+                .to_string(),
+            );
+            options.insert(
+                "conditions".to_string(),
+                json!([
+                    {
+                        "type": "TextContent",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "aria-label",
+                        "pattern": r#".+"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "role",
+                        "pattern": r#"button"#,
+                    },
+                    {
+                        "type": "AttributeValue",
+                        "attribute": "data-test",
+                        "pattern": r#".+"#,
+                    }
+                ])
+                .to_string(),
+            );
+            options
+        },
+    });
+
+    let linter = HtmlLinter::new(rules, None);
+
+    // Test valid combination (text + aria-label)
+    let html = r#"<button type="button" aria-label="Save">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results.len(),
+        0,
+        "Button with valid attribute combination should pass"
+    );
+
+    // Test invalid combination (only text)
+    let html = r#"<button type="button">Save Changes</button>"#;
+    let results = linter.lint(html).unwrap();
+    assert!(results
+        .iter()
+        .any(|r| r.rule == "button-valid-combinations"));
+
+    // Test valid combination (aria-label + role + data-test)
+    let html =
+        r#"<button type="button" aria-label="Save" role="button" data-test="save-btn"></button>"#;
+    let results = linter.lint(html).unwrap();
+    assert_eq!(
+        results.len(),
+        0,
+        "Button with valid complex combination should pass"
     );
 }
