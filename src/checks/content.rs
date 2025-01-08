@@ -112,6 +112,30 @@ impl HtmlLinter {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(usize::MAX);
 
+                // Check if matches is empty and content is required
+                if matches.is_empty()
+                    && rule
+                        .options
+                        .get("required")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(false)
+                {
+                    results.push(LintResult {
+                        rule: rule.name.clone(),
+                        severity: rule.severity.clone(),
+                        message: format!(
+                            "Required content with length between {} and {} not found",
+                            min_length, max_length
+                        ),
+                        location: Location {
+                            line: 1,
+                            column: 1,
+                            element: "".to_string(),
+                        },
+                        source: "".to_string(),
+                    });
+                }
+
                 for node_idx in matches {
                     if let Some(node) = index.get_node(node_idx) {
                         let text = dom::utils::get_node_text_content(node_idx, index);

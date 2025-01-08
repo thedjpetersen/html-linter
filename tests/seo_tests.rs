@@ -43,6 +43,31 @@ fn setup_seo_rules() -> Vec<Rule> {
                 options
             },
         },
+        // Add this rule after the meta-title rule and before the meta-robots-advanced rule
+        Rule {
+            name: "canonical-url".to_string(),
+            rule_type: RuleType::ElementContent,
+            severity: Severity::Error,
+            selector: "head".to_string(),
+            condition: "meta-tags".to_string(),
+            message: "Canonical URL must be present and valid".to_string(),
+            options: {
+                let mut options = HashMap::new();
+                options.insert(
+                    "required_meta_tags".to_string(),
+                    r#"[{
+                        "rel": "canonical",
+                        "pattern": {
+                            "type": "Regex",
+                            "value": "^https?://[\\w.-]+\\.[a-zA-Z]{2,}(?:/[\\w.-]*)*/?$"
+                        },
+                        "required": true
+                    }]"#
+                    .to_string(),
+                );
+                options
+            },
+        },
         // Advanced Meta Tags
         Rule {
             name: "meta-robots-advanced".to_string(),
@@ -59,7 +84,7 @@ fn setup_seo_rules() -> Vec<Rule> {
                         "name": "robots",
                         "pattern": {
                             "type": "OneOf",
-                            "values": [
+                            "value": [
                                 "index, follow",
                                 "index, follow, max-snippet:-1, max-image-preview:large",
                                 "noindex, follow",
@@ -107,12 +132,18 @@ fn setup_seo_rules() -> Vec<Rule> {
                         },
                         {
                             "property": "og:image",
-                            "pattern": "^https://.+\\.(jpg|jpeg|png|webp)$",
+                            "pattern": {
+                                "type": "Regex",
+                                "value": "^https://.+\\.(jpg|jpeg|png|webp)$"
+                            },
                             "required": true
                         },
                         {
                             "property": "og:url",
-                            "pattern": "^https://",
+                            "pattern": {
+                                "type": "Regex",
+                                "value": "^https://"
+                            },
                             "required": true
                         }
                     ]"#
