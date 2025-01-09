@@ -48,13 +48,14 @@ pub struct DOMIndex {
 
 impl DOMIndex {
     pub fn new(dom: &markup5ever_rcdom::RcDom, source: &str) -> Self {
+        let interner = StringInterner::with_capacity(1024);
         let mut index = Self {
             arena: NodeArena::new(),
             elements: HashMap::with_capacity(256),
             ids: HashMap::with_capacity(256),
             classes: HashMap::with_capacity(256),
-            interner: RwLock::new(StringInterner::with_capacity(1024)),
-            selector_engine: SelectorEngine::new(),
+            interner: RwLock::new(interner.clone()),
+            selector_engine: SelectorEngine::new(interner),
             source_map: SourceMap::new(source),
             source: source.to_string(),
         };
@@ -72,27 +73,31 @@ impl DOMIndex {
         let mut results = Vec::new();
         for alt in &selector.alternatives {
             // Optimize query path selection based on selector specificity
-            let initial_set = if alt.element.is_none()
-                && alt.id.is_none()
-                && alt.classes.is_empty()
-                && alt.attributes.is_empty()
-            {
-                // Handle universal "*" selector - match all elements
-                (0..self.arena.nodes.len()).collect()
-            } else if let Some(id) = alt.id {
-                self.ids.get(&id).map(|&idx| vec![idx]).unwrap_or_default()
-            } else if let Some(element) = alt.element {
-                self.elements.get(&element).cloned().unwrap_or_default()
-            } else if !alt.classes.is_empty() {
-                // Start with smallest class set for better performance
-                alt.classes
-                    .iter()
-                    .filter_map(|class| self.classes.get(class))
-                    .min_by_key(|v| v.len())
-                    .cloned()
-                    .unwrap_or_default()
+            let initial_set = if let Some(first_part) = alt.first() {
+                if first_part.element.is_none()
+                    && first_part.id.is_none()
+                    && first_part.classes.is_empty()
+                    && first_part.attributes.is_empty()
+                {
+                    // Handle universal "*" selector - match all elements
+                    (0..self.arena.nodes.len()).collect()
+                } else if let Some(id) = first_part.id {
+                    self.ids.get(&id).map(|&idx| vec![idx]).unwrap_or_default()
+                } else if let Some(element) = first_part.element {
+                    self.elements.get(&element).cloned().unwrap_or_default()
+                } else if !first_part.classes.is_empty() {
+                    first_part
+                        .classes
+                        .iter()
+                        .filter_map(|class| self.classes.get(class))
+                        .min_by_key(|v| v.len())
+                        .cloned()
+                        .unwrap_or_default()
+                } else {
+                    (0..self.arena.nodes.len()).collect()
+                }
             } else {
-                (0..self.arena.nodes.len()).collect()
+                Vec::new()
             };
 
             // Apply remaining filters
@@ -102,55 +107,95 @@ impl DOMIndex {
                     let node = unsafe { self.arena.nodes.get_unchecked(idx) };
 
                     // Check classes
-                    let classes_match =
-                        alt.classes.iter().all(|class| node.classes.contains(class));
+                    let classes_match = if let Some(first_part) = alt.first() {
+                        first_part
+                            .classes
+                            .iter()
+                            .all(|class| node.classes.contains(class))
+                    } else {
+                        true
+                    };
 
                     // Check attributes
-                    let attrs_match = alt.attributes.iter().all(|attr_sel| match attr_sel {
-                        AttributeSelector::Exists(attr_name) => {
-                            node.attributes.iter().any(|a| a.name == *attr_name)
-                        }
-                        AttributeSelector::Equals(attr_name, value) => node
-                            .attributes
-                            .iter()
-                            .any(|a| a.name == *attr_name && a.value == *value),
-                        AttributeSelector::StartsWith(attr_name, value) => {
-                            node.attributes.iter().any(|a| {
-                                if a.name == *attr_name {
-                                    let interner = self.interner.read();
-                                    let attr_str = interner.resolve(a.value).unwrap();
-                                    let value_str = interner.resolve(*value).unwrap();
-                                    attr_str.starts_with(value_str)
-                                } else {
-                                    false
-                                }
-                            })
-                        }
-                        AttributeSelector::EndsWith(attr_name, value) => {
-                            node.attributes.iter().any(|a| {
-                                if a.name == *attr_name {
-                                    let interner = self.interner.read();
-                                    let attr_str = interner.resolve(a.value).unwrap();
-                                    let value_str = interner.resolve(*value).unwrap();
-                                    attr_str.ends_with(value_str)
-                                } else {
-                                    false
-                                }
-                            })
-                        }
-                        AttributeSelector::Contains(attr_name, value) => {
-                            node.attributes.iter().any(|a| {
-                                if a.name == *attr_name {
-                                    let interner = self.interner.read();
-                                    let attr_str = interner.resolve(a.value).unwrap();
-                                    let value_str = interner.resolve(*value).unwrap();
-                                    attr_str.contains(value_str)
-                                } else {
-                                    false
-                                }
-                            })
-                        }
-                    });
+                    let attrs_match = if let Some(first_part) = alt.first() {
+                        first_part.attributes.iter().all(|attr_sel| match attr_sel {
+                            AttributeSelector::Exists(attr_name) => {
+                                node.attributes.iter().any(|a| a.name == *attr_name)
+                            }
+                            AttributeSelector::Equals(attr_name, value) => node
+                                .attributes
+                                .iter()
+                                .any(|a| a.name == *attr_name && a.value == *value),
+                            AttributeSelector::StartsWith(attr_name, value) => {
+                                node.attributes.iter().any(|a| {
+                                    if a.name == *attr_name {
+                                        let interner = self.interner.read();
+                                        let attr_str = interner.resolve(a.value).unwrap();
+                                        let value_str = interner.resolve(*value).unwrap();
+                                        attr_str.starts_with(value_str)
+                                    } else {
+                                        false
+                                    }
+                                })
+                            }
+                            AttributeSelector::EndsWith(attr_name, value) => {
+                                node.attributes.iter().any(|a| {
+                                    if a.name == *attr_name {
+                                        let interner = self.interner.read();
+                                        let attr_str = interner.resolve(a.value).unwrap();
+                                        let value_str = interner.resolve(*value).unwrap();
+                                        attr_str.ends_with(value_str)
+                                    } else {
+                                        false
+                                    }
+                                })
+                            }
+                            AttributeSelector::Contains(attr_name, value) => {
+                                node.attributes.iter().any(|a| {
+                                    if a.name == *attr_name {
+                                        let interner = self.interner.read();
+                                        let attr_str = interner.resolve(a.value).unwrap();
+                                        let value_str = interner.resolve(*value).unwrap();
+                                        attr_str.contains(value_str)
+                                    } else {
+                                        false
+                                    }
+                                })
+                            }
+                            AttributeSelector::ListContains(attr_name, value) => {
+                                node.attributes.iter().any(|a| {
+                                    if a.name == *attr_name {
+                                        let interner = self.interner.read();
+                                        let attr_str = interner.resolve(a.value).unwrap();
+                                        let value_str = interner.resolve(*value).unwrap();
+                                        attr_str.split_whitespace().any(|part| part == value_str)
+                                    } else {
+                                        false
+                                    }
+                                })
+                            }
+                            AttributeSelector::DashMatch(attr_name, value) => {
+                                node.attributes.iter().any(|a| {
+                                    if a.name == *attr_name {
+                                        let interner = self.interner.read();
+                                        let attr_str = interner.resolve(a.value).unwrap();
+                                        let value_str = interner.resolve(*value).unwrap();
+                                        attr_str == value_str
+                                            || attr_str.starts_with(&format!("{}-", value_str))
+                                    } else {
+                                        false
+                                    }
+                                })
+                            }
+                            AttributeSelector::CaseInsensitive(inner) => match &**inner {
+                                // Recursively handle the inner selector with case-insensitive comparison
+                                // You'll need to implement case-insensitive versions of the comparisons
+                                _ => false, // Temporary fallback
+                            },
+                        })
+                    } else {
+                        true
+                    };
 
                     classes_match && attrs_match
                 })
