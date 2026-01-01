@@ -46,25 +46,16 @@ fn setup_seo_rules() -> Vec<Rule> {
         // Add this rule after the meta-title rule and before the meta-robots-advanced rule
         Rule {
             name: "canonical-url".to_string(),
-            rule_type: RuleType::ElementContent,
+            rule_type: RuleType::AttributeValue,
             severity: Severity::Error,
-            selector: "head".to_string(),
+            selector: "link[rel='canonical']".to_string(),
             condition: "meta-tags".to_string(),
             message: "Canonical URL must be present and valid".to_string(),
             options: {
                 let mut options = HashMap::new();
-                options.insert(
-                    "required_meta_tags".to_string(),
-                    r#"[{
-                        "rel": "canonical",
-                        "pattern": {
-                            "type": "Regex",
-                            "value": "^https?://[\\w.-]+\\.[a-zA-Z]{2,}(?:/[\\w.-]*)*/?$"
-                        },
-                        "required": true
-                    }]"#
-                    .to_string(),
-                );
+                options.insert("pattern".to_string(), r#"^https?://[\\w.-]+\\.[a-zA-Z]{2,}(?:/[\\w.-]*)*/?$"#.to_string());
+                options.insert("check_mode".to_string(), "ensure_existence".to_string());
+                options.insert("attributes".to_string(), "href".to_string());
                 options
             },
         },
@@ -787,6 +778,53 @@ fn setup_seo_rules() -> Vec<Rule> {
                 );
                 options
             },
+        },
+        // Add this rule after the language-optimization rule
+        Rule {
+            name: "hreflang-tags".to_string(),
+            rule_type: RuleType::Compound,
+            severity: Severity::Warning,
+            selector: "head".to_string(),
+            condition: "hreflang-validation".to_string(),
+            message: "Proper hreflang implementation required for international SEO".to_string(),
+            options: {
+                let mut options = HashMap::new();
+                options.insert(
+                    "conditions".to_string(),
+                    r#"[
+                        {
+                            "type": "AttributeValue",
+                            "selector": "link[rel='alternate'][hreflang]",
+                            "attribute": "hreflang",
+                            "pattern": "^(x-default|[a-z]{2}(-[A-Z]{2})?|[a-z]{2}-[a-z]{2})$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "link[rel='alternate'][hreflang]",
+                            "attribute": "href",
+                            "pattern": "^https?://[\\w.-]+\\.[a-zA-Z]{2,}(?:/[\\w.-]*)*/?$",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "link[rel='alternate'][hreflang='x-default']",
+                            "attribute": "hreflang",
+                            "pattern": "x-default",
+                            "check_mode": "ensure_existence"
+                        },
+                        {
+                            "type": "AttributeValue",
+                            "selector": "html",
+                            "attribute": "lang",
+                            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+                            "check_mode": "ensure_existence"
+                        }
+                    ]"#.to_string(),
+                );
+                options.insert("check_mode".to_string(), "all".to_string());
+                options
+            },
         }
     ]
 }
@@ -827,9 +865,11 @@ fn test_meta_description_length() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-description");
     assert!(
-        results.iter().any(|r| r.rule == "meta-description"),
-        "Should detect too short meta description"
+        violation.is_some(),
+        "Should detect too short meta description: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test too long description
@@ -839,9 +879,11 @@ fn test_meta_description_length() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-description");
     assert!(
-        results.iter().any(|r| r.rule == "meta-description"),
-        "Should detect too long meta description"
+        violation.is_some(),
+        "Should detect too long meta description: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 }
 
@@ -854,9 +896,11 @@ fn test_title_length() {
         <html><head><title>Too short</title></head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-title");
     assert!(
-        results.iter().any(|r| r.rule == "meta-title"),
-        "Should detect too short title"
+        violation.is_some(),
+        "Should detect too short title: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test too long title
@@ -864,9 +908,11 @@ fn test_title_length() {
         <html><head><title>This title is way too long and will be truncated in search engine results pages</title></head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-title");
     assert!(
-        results.iter().any(|r| r.rule == "meta-title"),
-        "Should detect too long title"
+        violation.is_some(),
+        "Should detect too long title: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 }
 
@@ -879,9 +925,11 @@ fn test_canonical_url() {
         <html><head><title>Page Title</title></head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "canonical-url");
     assert!(
-        results.iter().any(|r| r.rule == "canonical-url"),
-        "Should detect missing canonical URL"
+        violation.is_some(),
+        "Should detect missing canonical URL: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test invalid canonical
@@ -891,9 +939,11 @@ fn test_canonical_url() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "canonical-url");
     assert!(
-        results.iter().any(|r| r.rule == "canonical-url"),
-        "Should detect invalid canonical URL"
+        violation.is_some(),
+        "Should detect invalid canonical URL: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 }
 
@@ -909,9 +959,11 @@ fn test_heading_hierarchy() {
         </body></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "heading-hierarchy");
     assert!(
-        results.iter().any(|r| r.rule == "heading-hierarchy"),
-        "Should detect skipped heading levels"
+        violation.is_some(),
+        "Should detect skipped heading levels: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test multiple h1 tags
@@ -922,9 +974,11 @@ fn test_heading_hierarchy() {
         </body></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "heading-hierarchy");
     assert!(
-        results.iter().any(|r| r.rule == "heading-hierarchy"),
-        "Should detect multiple H1 tags"
+        violation.is_some(),
+        "Should detect multiple H1 tags: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 }
 
@@ -998,9 +1052,11 @@ fn test_meta_robots() {
     // Test missing robots meta
     let html = r#"<html><head><title>Page</title></head></html>"#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-robots");
     assert!(
-        results.iter().any(|r| r.rule == "meta-robots"),
-        "Should detect missing robots meta tag"
+        violation.is_some(),
+        "Should detect missing robots meta tag: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test invalid robots content
@@ -1010,9 +1066,11 @@ fn test_meta_robots() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "meta-robots");
     assert!(
-        results.iter().any(|r| r.rule == "meta-robots"),
-        "Should detect invalid robots directives"
+        violation.is_some(),
+        "Should detect invalid robots directives: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid robots combinations
@@ -1047,9 +1105,11 @@ fn test_open_graph_tags() {
     // Test missing required OG tags
     let html = r#"<html><head><title>Page</title></head></html>"#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "og-tags");
     assert!(
-        results.iter().any(|r| r.rule == "og-tags"),
-        "Should detect missing Open Graph tags"
+        violation.is_some(),
+        "Should detect missing Open Graph tags: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test complete OG implementation
@@ -1077,9 +1137,11 @@ fn test_twitter_cards() {
     // Test missing Twitter card tags
     let html = r#"<html><head><title>Page</title></head></html>"#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "twitter-cards");
     assert!(
-        results.iter().any(|r| r.rule == "twitter-cards"),
-        "Should detect missing Twitter card tags"
+        violation.is_some(),
+        "Should detect missing Twitter card tags: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid Twitter card implementation
@@ -1106,9 +1168,11 @@ fn test_structured_data() {
     // Test missing structured data
     let html = r#"<html><head><title>Page</title></head></html>"#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "structured-data");
     assert!(
-        results.iter().any(|r| r.rule == "structured-data"),
-        "Should detect missing structured data"
+        violation.is_some(),
+        "Should detect missing structured data: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test invalid JSON-LD
@@ -1120,9 +1184,11 @@ fn test_structured_data() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "structured-data");
     assert!(
-        results.iter().any(|r| r.rule == "structured-data"),
-        "Should detect invalid JSON-LD syntax"
+        violation.is_some(),
+        "Should detect invalid JSON-LD syntax: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid structured data
@@ -1158,16 +1224,18 @@ fn test_structured_data() {
 fn test_pagination_tags() {
     let linter = HtmlLinter::new(setup_seo_rules(), None);
 
-    // Test missing pagination tags on paginated content
+    // Test missing pagination tags
     let html = r#"
         <html><head>
             <title>Page 2 of Articles</title>
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "pagination-tags");
     assert!(
-        results.iter().any(|r| r.rule == "pagination-tags"),
-        "Should detect missing pagination tags"
+        violation.is_some(),
+        "Should detect missing pagination tags: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid pagination implementation
@@ -1194,16 +1262,18 @@ fn test_pagination_tags() {
 fn test_hreflang_tags() {
     let linter = HtmlLinter::new(setup_seo_rules(), None);
 
-    // Test missing hreflang on multi-language site
+    // Test missing hreflang
     let html = r#"
         <html lang="en"><head>
             <title>English Page</title>
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "hreflang-tags");
     assert!(
-        results.iter().any(|r| r.rule == "hreflang-tags"),
-        "Should detect missing hreflang tags"
+        violation.is_some(),
+        "Should detect missing hreflang tags: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid hreflang implementation
@@ -1231,9 +1301,11 @@ fn test_mobile_viewport() {
     // Test missing viewport meta
     let html = r#"<html><head><title>Page</title></head></html>"#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "viewport-meta");
     assert!(
-        results.iter().any(|r| r.rule == "viewport-meta"),
-        "Should detect missing viewport meta tag"
+        violation.is_some(),
+        "Should detect missing viewport meta tag: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test invalid viewport content
@@ -1243,9 +1315,11 @@ fn test_mobile_viewport() {
         </head></html>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results.iter().find(|r| r.rule == "viewport-meta");
     assert!(
-        results.iter().any(|r| r.rule == "viewport-meta"),
-        "Should detect non-responsive viewport settings"
+        violation.is_some(),
+        "Should detect non-responsive viewport settings: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test valid viewport
@@ -1285,7 +1359,7 @@ fn test_image_optimization_compound() {
                 decoding="async"
                 sizes="(max-width: 768px) 100vw, 50vw"
                 alt="Optimized image"
-            />
+            /ar>
         </picture>
     "#;
     let results = linter.lint(html).unwrap();
@@ -1303,11 +1377,13 @@ fn test_image_optimization_compound() {
         <img src="image.jpg" alt="Non-optimized image">
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results
+        .iter()
+        .find(|r| r.rule == "image-optimization-compound");
     assert!(
-        results
-            .iter()
-            .any(|r| r.rule == "image-optimization-compound"),
-        "Should fail when optimizations are missing"
+        violation.is_some(),
+        "Should fail when optimizations are missing: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 
     // Test case with partial optimizations
@@ -1325,10 +1401,12 @@ fn test_image_optimization_compound() {
         </picture>
     "#;
     let results = linter.lint(html).unwrap();
+    let violation = results
+        .iter()
+        .find(|r| r.rule == "image-optimization-compound");
     assert!(
-        results
-            .iter()
-            .any(|r| r.rule == "image-optimization-compound"),
-        "Should fail when some optimizations are missing"
+        violation.is_some(),
+        "Should fail when some optimizations are missing: {}",
+        violation.map_or("No violation found", |v| &v.message)
     );
 }

@@ -38,7 +38,6 @@ pub enum AttributeSelector {
     Contains(DefaultSymbol, DefaultSymbol),     // [attr*=value]
     ListContains(DefaultSymbol, DefaultSymbol), // [attr~=value]
     DashMatch(DefaultSymbol, DefaultSymbol),    // [attr|=value]
-    CaseInsensitive(Box<AttributeSelector>),    // [attr=value i]
 }
 
 // Modify SelectorPart to include new features
@@ -125,6 +124,94 @@ impl SelectorEngine {
         }
     }
 
+    fn parse_attribute_selector(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        interner: &RwLock<StringInterner>,
+    ) -> Option<AttributeSelector> {
+        let mut token = String::with_capacity(32);
+
+        // Parse attribute name
+        while let Some(&c) = chars.peek() {
+            if c == '=' || c == '^' || c == '$' || c == '*' || c == '~' || c == '|' || c == ']' {
+                break;
+            }
+            token.push(chars.next().unwrap());
+        }
+        let attr_name = interner.write().get_or_intern(&token.trim());
+        token.clear();
+
+        // Parse operator and value if present
+        match chars.next() {
+            Some(']') => Some(AttributeSelector::Exists(attr_name)),
+            Some('=') => {
+                let value = self.parse_attribute_value(chars);
+                Some(AttributeSelector::Equals(
+                    attr_name,
+                    interner.write().get_or_intern(&value),
+                ))
+            }
+            Some(c) => match c {
+                '^' | '$' | '*' | '~' | '|' => {
+                    if chars.next() != Some('=') {
+                        return None;
+                    }
+
+                    let value = self.parse_attribute_value(chars);
+                    let value_symbol = interner.write().get_or_intern(&value);
+
+                    match c {
+                        '^' => Some(AttributeSelector::StartsWith(attr_name, value_symbol)),
+                        '$' => Some(AttributeSelector::EndsWith(attr_name, value_symbol)),
+                        '*' => Some(AttributeSelector::Contains(attr_name, value_symbol)),
+                        '~' => Some(AttributeSelector::ListContains(attr_name, value_symbol)),
+                        '|' => Some(AttributeSelector::DashMatch(attr_name, value_symbol)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
+    fn parse_attribute_value(&self, chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
+        let mut value = String::new();
+        let mut in_quotes = false;
+        let quote_char = match chars.peek() {
+            Some(&'"') | Some(&'\'') => {
+                in_quotes = true;
+                chars.next()
+            }
+            _ => None,
+        };
+
+        while let Some(&c) = chars.peek() {
+            if !in_quotes && (c == ']' || c == ' ') {
+                break;
+            }
+            if in_quotes && Some(c) == quote_char {
+                chars.next(); // consume closing quote
+                break;
+            }
+            value.push(chars.next().unwrap());
+        }
+
+        // Skip closing bracket if present
+        while let Some(&c) = chars.peek() {
+            if c == ']' {
+                chars.next();
+                break;
+            }
+            if !c.is_whitespace() {
+                break;
+            }
+            chars.next();
+        }
+
+        value
+    }
+
     pub fn parse_selector(&self, selector: &str, interner: &RwLock<StringInterner>) -> Selector {
         // Handle universal selector "*" explicitly
         if selector == "*" {
@@ -166,87 +253,10 @@ impl SelectorEngine {
                             token.clear();
                         }
 
-                        // Parse attribute name
-                        while let Some(&c) = chars.peek() {
-                            if c == '=' || c == '^' || c == '$' || c == '*' || c == ']' {
-                                break;
-                            }
-                            token.push(chars.next().unwrap());
-                        }
-                        let attr_name = interner.write().get_or_intern(&token);
-                        token.clear();
-
-                        // Parse operator and value if present
-                        match chars.next() {
-                            Some(']') => {
-                                attributes.push(AttributeSelector::Exists(attr_name));
-                            }
-                            Some('=') => {
-                                // Skip quote if present
-                                if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                    chars.next();
-                                }
-
-                                while let Some(&c) = chars.peek() {
-                                    if c == '"' || c == '\'' || c == ']' {
-                                        break;
-                                    }
-                                    token.push(chars.next().unwrap());
-                                }
-
-                                // Skip closing quote if present
-                                if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                    chars.next();
-                                }
-
-                                let value = interner.write().get_or_intern(&token);
-                                attributes.push(AttributeSelector::Equals(attr_name, value));
-                                token.clear();
-
-                                // Skip closing bracket
-                                chars.next();
-                            }
-                            Some(c) => {
-                                match c {
-                                    '^' | '$' | '*' => {
-                                        let op = c;
-                                        // Skip = character
-                                        chars.next();
-
-                                        // Skip quote if present
-                                        if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                            chars.next();
-                                        }
-
-                                        while let Some(&c) = chars.peek() {
-                                            if c == '"' || c == '\'' || c == ']' {
-                                                break;
-                                            }
-                                            token.push(chars.next().unwrap());
-                                        }
-
-                                        // Skip closing quote if present
-                                        if let Some(&'"') | Some(&'\'') = chars.peek() {
-                                            chars.next();
-                                        }
-
-                                        let value = interner.write().get_or_intern(&token);
-                                        let selector = match op {
-                                            '^' => AttributeSelector::StartsWith(attr_name, value),
-                                            '$' => AttributeSelector::EndsWith(attr_name, value),
-                                            '*' => AttributeSelector::Contains(attr_name, value),
-                                            _ => unreachable!(),
-                                        };
-                                        attributes.push(selector);
-                                        token.clear();
-
-                                        // Skip closing bracket
-                                        chars.next();
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            None => break,
+                        if let Some(attr_selector) =
+                            self.parse_attribute_selector(&mut chars, interner)
+                        {
+                            attributes.push(attr_selector);
                         }
                     }
                     '#' => {
@@ -649,7 +659,6 @@ impl SelectorEngine {
                     attr_str == value_str || attr_str.starts_with(&format!("{:?}-", value_str))
                 })
             }
-            AttributeSelector::CaseInsensitive(inner) => self.matches_attribute(element, inner),
         }
     }
 }

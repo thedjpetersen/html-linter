@@ -187,11 +187,6 @@ impl DOMIndex {
                                     }
                                 })
                             }
-                            AttributeSelector::CaseInsensitive(inner) => match &**inner {
-                                // Recursively handle the inner selector with case-insensitive comparison
-                                // You'll need to implement case-insensitive versions of the comparisons
-                                _ => false, // Temporary fallback
-                            },
                         })
                     } else {
                         true
